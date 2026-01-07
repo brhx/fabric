@@ -1,8 +1,17 @@
-import { CameraControls, CameraControlsImpl, GizmoHelper, GizmoViewcube } from "@react-three/drei";
-import { Canvas, useThree } from "@react-three/fiber";
+import {
+  CameraControls,
+  CameraControlsImpl,
+  GizmoHelper,
+  GizmoViewport,
+  GizmoViewcube,
+  Html,
+} from "@react-three/drei";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
+import { LuRotateCcw, LuRotateCw } from "react-icons/lu";
 import {
+  Camera,
   MathUtils,
   Object3D,
   PerspectiveCamera,
@@ -16,10 +25,18 @@ import {
 const MIN_DISTANCE = 2;
 const MAX_DISTANCE = 200;
 const ROTATE_SPEED = 0.0022;
-const VIEWCUBE_SIZE_PX = 112;
-const VIEWCUBE_MARGIN_RIGHT_PX = 76;
-const VIEWCUBE_MARGIN_TOP_PX = 20;
+const VIEWCUBE_SIZE_PX = 56;
+const VIEWCUBE_MARGIN_RIGHT_PX = 84;
+const VIEWCUBE_MARGIN_TOP_PX = 18;
 const VIEWCUBE_BASE_SIZE_PX = 60;
+const VIEWCUBE_AXIS_SCALE = 1.15;
+const VIEWCUBE_AXIS_OFFSET_X_PX = -VIEWCUBE_SIZE_PX / 2 - 8;
+const VIEWCUBE_AXIS_OFFSET_Y_PX = -VIEWCUBE_SIZE_PX / 2 - 6;
+const VIEWCUBE_BUTTON_SIZE_PX = 26;
+const VIEWCUBE_BUTTON_OFFSET_X_PX = VIEWCUBE_SIZE_PX / 2 + 18;
+const VIEWCUBE_BUTTON_OFFSET_Y_PX = VIEWCUBE_SIZE_PX / 2 - 6;
+const VIEWCUBE_RIGHT_EXTENT_PX = VIEWCUBE_BUTTON_OFFSET_X_PX + VIEWCUBE_BUTTON_SIZE_PX / 2;
+const VIEWCUBE_TOP_EXTENT_PX = VIEWCUBE_BUTTON_OFFSET_Y_PX + VIEWCUBE_BUTTON_SIZE_PX / 2;
 
 export function Viewport3D(props: { className?: string }) {
   const controlsRef = useRef<CameraControlsImpl | null>(null);
@@ -59,9 +76,9 @@ export function Viewport3D(props: { className?: string }) {
           minPolarAngle={0.01}
           maxPolarAngle={Math.PI - 0.01}
           mouseButtons={{
-            left: CameraControlsImpl.ACTION.NONE,
+            left: CameraControlsImpl.ACTION.ROTATE,
+            right: CameraControlsImpl.ACTION.TRUCK,
             middle: CameraControlsImpl.ACTION.NONE,
-            right: CameraControlsImpl.ACTION.NONE,
             wheel: CameraControlsImpl.ACTION.NONE,
           }}
           touches={{
@@ -296,12 +313,7 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
           pickPivotAtClientPoint(event.clientX, event.clientY, scratch.tmpPivot);
           const controls = props.controls.current;
           if (controls) {
-            controls.setTarget(
-              scratch.tmpPivot.x,
-              scratch.tmpPivot.y,
-              scratch.tmpPivot.z,
-              false,
-            );
+            controls.setOrbitPoint(scratch.tmpPivot.x, scratch.tmpPivot.y, scratch.tmpPivot.z);
           }
         }
 
@@ -362,10 +374,10 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
 }
 
 function ViewCube(props: { controls: RefObject<CameraControlsImpl | null> }) {
-  const { camera, gl, invalidate } = useThree();
+  const { gl, invalidate, camera } = useThree();
   const [margin, setMargin] = useState<[number, number]>(() => [
-    VIEWCUBE_MARGIN_RIGHT_PX + VIEWCUBE_SIZE_PX / 2,
-    VIEWCUBE_MARGIN_TOP_PX + VIEWCUBE_SIZE_PX / 2,
+    VIEWCUBE_MARGIN_RIGHT_PX + VIEWCUBE_RIGHT_EXTENT_PX,
+    VIEWCUBE_MARGIN_TOP_PX + VIEWCUBE_TOP_EXTENT_PX,
   ]);
   const scratch = useMemo(
     () => ({
@@ -399,8 +411,8 @@ function ViewCube(props: { controls: RefObject<CameraControlsImpl | null> }) {
       const topInset = Math.max(0, viewportRect.top - canvasRect.top);
 
       const nextMargin: [number, number] = [
-        Math.round(rightInset + VIEWCUBE_MARGIN_RIGHT_PX + VIEWCUBE_SIZE_PX / 2),
-        Math.round(topInset + VIEWCUBE_MARGIN_TOP_PX + VIEWCUBE_SIZE_PX / 2),
+        Math.round(rightInset + VIEWCUBE_MARGIN_RIGHT_PX + VIEWCUBE_RIGHT_EXTENT_PX),
+        Math.round(topInset + VIEWCUBE_MARGIN_TOP_PX + VIEWCUBE_TOP_EXTENT_PX),
       ];
 
       setMargin((current) => {
@@ -458,13 +470,12 @@ function ViewCube(props: { controls: RefObject<CameraControlsImpl | null> }) {
       scratch.normal.applyQuaternion(scratch.quaternion).normalize();
     }
 
-    if (Math.abs(scratch.normal.z) > 0.5) {
-      camera.up.set(0, 1, 0);
-    } else {
-      camera.up.set(0, 0, 1);
+    const poleThreshold = 0.98;
+    if (Math.abs(scratch.normal.z) > poleThreshold) {
+      scratch.normal.x += 0.001 * Math.sign(scratch.normal.z || 1);
+      scratch.normal.y += 0.001;
+      scratch.normal.normalize();
     }
-
-    controls.updateCameraUp();
 
     scratch.nextPosition.copy(scratch.target).addScaledVector(scratch.normal, radius);
     controls.setLookAt(
@@ -483,9 +494,137 @@ function ViewCube(props: { controls: RefObject<CameraControlsImpl | null> }) {
 
   return (
     <GizmoHelper alignment="top-right" margin={margin}>
-      <group scale={VIEWCUBE_SIZE_PX / VIEWCUBE_BASE_SIZE_PX}>
-        <GizmoViewcube onClick={handleClick} />
+      <group>
+        <group
+          scale={VIEWCUBE_SIZE_PX / VIEWCUBE_BASE_SIZE_PX}
+          rotation={[Math.PI / 2, 0, 0]}
+        >
+          <GizmoViewcube
+            onClick={handleClick}
+            color="#2f323a"
+            textColor="rgba(255,255,255,0.9)"
+            strokeColor="rgba(255,255,255,0.16)"
+            hoverColor="#424552"
+            opacity={1}
+            font="600 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
+          />
+        </group>
+
+        <group
+          scale={VIEWCUBE_AXIS_SCALE}
+          rotation={[Math.PI / 2, 0, 0]}
+          position={[VIEWCUBE_AXIS_OFFSET_X_PX, VIEWCUBE_AXIS_OFFSET_Y_PX, -1]}
+        >
+          <GizmoViewport
+            axisColors={["#e15a5a", "#4a7cff", "#4fc07f"]}
+            axisScale={[0.8, 0.03, 0.03]}
+            hideAxisHeads
+            hideNegativeAxes
+          />
+
+          <group scale={40}>
+            <Html center position={[1.12, 0, 0]}>
+              <div
+                style={{
+                  pointerEvents: "none",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  color: "#e15a5a",
+                  textShadow: "0 2px 10px rgba(0,0,0,0.65)",
+                }}
+              >
+                X
+              </div>
+            </Html>
+
+            <Html center position={[0, 1.12, 0]}>
+              <div
+                style={{
+                  pointerEvents: "none",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  color: "#4a7cff",
+                  textShadow: "0 2px 10px rgba(0,0,0,0.65)",
+                }}
+              >
+                Z
+              </div>
+            </Html>
+          </group>
+        </group>
+
+        <ViewCubeButtons controls={props.controls} camera={camera} />
       </group>
     </GizmoHelper>
+  );
+}
+
+function ViewCubeButtons(props: {
+  controls: RefObject<CameraControlsImpl | null>;
+  camera: Camera;
+}) {
+  const groupRef = useRef<Object3D | null>(null);
+
+  useFrame(() => {
+    if (!groupRef.current) return;
+    groupRef.current.quaternion.copy(props.camera.quaternion);
+  });
+
+  return (
+    <group ref={groupRef}>
+      <Html center position={[-VIEWCUBE_BUTTON_OFFSET_X_PX, VIEWCUBE_BUTTON_OFFSET_Y_PX, 2]}>
+        <button
+          type="button"
+          data-ui-chrome="true"
+          aria-label="Rotate view left"
+          onClick={() => {
+            const controls = props.controls.current;
+            if (!controls) return;
+            controls.rotate(Math.PI / 2, 0, true);
+          }}
+          style={{
+            width: `${VIEWCUBE_BUTTON_SIZE_PX}px`,
+            height: `${VIEWCUBE_BUTTON_SIZE_PX}px`,
+            borderRadius: "999px",
+            border: "1px solid rgba(255,255,255,0.08)",
+            background: "rgba(16,18,24,0.92)",
+            display: "grid",
+            placeItems: "center",
+            color: "rgba(255,255,255,0.82)",
+            boxShadow: "0 10px 28px rgba(0,0,0,0.55)",
+            backdropFilter: "blur(10px)",
+          }}
+        >
+          <LuRotateCcw size={14} />
+        </button>
+      </Html>
+
+      <Html center position={[VIEWCUBE_BUTTON_OFFSET_X_PX, VIEWCUBE_BUTTON_OFFSET_Y_PX, 2]}>
+        <button
+          type="button"
+          data-ui-chrome="true"
+          aria-label="Rotate view right"
+          onClick={() => {
+            const controls = props.controls.current;
+            if (!controls) return;
+            controls.rotate(-Math.PI / 2, 0, true);
+          }}
+          style={{
+            width: `${VIEWCUBE_BUTTON_SIZE_PX}px`,
+            height: `${VIEWCUBE_BUTTON_SIZE_PX}px`,
+            borderRadius: "999px",
+            border: "1px solid rgba(255,255,255,0.08)",
+            background: "rgba(16,18,24,0.92)",
+            display: "grid",
+            placeItems: "center",
+            color: "rgba(255,255,255,0.82)",
+            boxShadow: "0 10px 28px rgba(0,0,0,0.55)",
+            backdropFilter: "blur(10px)",
+          }}
+        >
+          <LuRotateCw size={14} />
+        </button>
+      </Html>
+    </group>
   );
 }
