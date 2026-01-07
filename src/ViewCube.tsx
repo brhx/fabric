@@ -284,7 +284,8 @@ export function ViewCube(props: ViewCubeProps) {
   useFrame(({ camera }) => {
     const orientation = orientationRef.current;
     if (!orientation) return;
-    scratch.matrix.copy(camera.matrixWorld).invert();
+    const sourceCamera = props.controls.current?.camera ?? camera;
+    scratch.matrix.copy(sourceCamera.matrixWorld).invert();
     orientation.quaternion.setFromRotationMatrix(scratch.matrix);
   });
 
