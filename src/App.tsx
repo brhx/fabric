@@ -42,53 +42,64 @@ function App() {
         </header>
 
         <div className="flex flex-1 gap-3 p-3 pt-3">
-          <aside className="flex w-72 flex-col rounded-2xl border border-white/10 bg-black/20 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl">
-            <div className="px-4 pt-4 text-xs font-semibold tracking-wide text-white/70">
-              Items
-            </div>
+          <aside className="w-72">
+            <GlassPanel className="flex h-full flex-col">
+              <div className="flex items-center justify-between px-4 pt-4">
+                <div className="text-xs font-semibold tracking-wide text-white/65">
+                  Items
+                </div>
+              </div>
 
-            <button
-              type="button"
-              className="mx-3 mt-3 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 hover:bg-white/10 hover:text-white"
-            >
-              <span className="flex items-center gap-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-white/50" />
-                All items
-              </span>
-              <IconChevronDown className="h-4 w-4 text-white/50" />
-            </button>
+              <div className="mt-3 px-3">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white/75 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-white/[0.08] hover:text-white"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-white/45" />
+                    All items
+                  </span>
+                  <IconChevronDown className="h-4 w-4 text-white/45" />
+                </button>
+              </div>
 
-            <div className="mt-2 px-3">
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.25)]"
-              >
-                <span className="grid h-6 w-6 place-items-center rounded-lg bg-white/10">
-                  <IconSketch className="h-4 w-4 text-white/70" />
-                </span>
-                Sketch 01
-              </button>
-            </div>
+              <div className="mt-1 px-3 pb-2">
+                <button
+                  type="button"
+                  className="group flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-white/80 hover:bg-white/[0.06] hover:text-white"
+                >
+                  <span className="grid w-4 place-items-center text-white/35 group-hover:text-white/55">
+                    <IconCornerDownRight className="h-4 w-4" />
+                  </span>
+                  <span className="grid h-6 w-6 place-items-center rounded-lg bg-white/[0.06] text-white/70 ring-1 ring-inset ring-white/[0.08]">
+                    <IconSketch className="h-4 w-4" />
+                  </span>
+                  Sketch 01
+                </button>
+              </div>
 
-            <div className="flex-1" />
+              <div className="flex-1" />
 
-            <div className="flex items-center justify-between p-3">
-              <button
-                type="button"
-                className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
-              >
-                <IconPlus className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
-              >
-                <IconDots className="h-4 w-4" />
-              </button>
-            </div>
+              <div className="border-t border-white/10 px-3 py-3">
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-white/[0.08] hover:text-white"
+                  >
+                    <IconPlus className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-white/[0.08] hover:text-white"
+                  >
+                    <IconDots className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </GlassPanel>
           </aside>
 
-          <section className="relative flex-1 overflow-hidden rounded-2xl border border-white/10 bg-black/10 shadow-[0_24px_70px_rgba(0,0,0,0.55)]">
+          <section className="relative flex-1 overflow-hidden">
 
             <div className="pointer-events-none absolute left-1/2 top-1/2 h-[280px] w-[420px] -translate-x-[46%] -translate-y-[20%] rotate-[14deg] skew-x-[-14deg] border border-blue-500/70 bg-blue-500/10 shadow-[0_0_0_1px_rgba(59,130,246,0.25)]" />
             <div className="pointer-events-none absolute left-1/2 top-1/2 h-[150px] w-[160px] -translate-x-[10%] translate-y-[32%] rotate-[14deg] skew-x-[-14deg] border border-blue-500/60 bg-blue-500/10" />
@@ -150,37 +161,64 @@ function App() {
             </div>
           </section>
 
-          <aside className="flex w-80 flex-col rounded-2xl border border-white/10 bg-black/20 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl">
-            <div className="flex items-center justify-between px-4 pt-4 text-xs font-semibold tracking-wide text-white/70">
-              <span>History</span>
-              <button
-                type="button"
-                className="grid h-8 w-8 place-items-center rounded-xl border border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white"
-              >
-                <IconChevronDown className="h-4 w-4" />
-              </button>
-            </div>
+          <aside className="w-80">
+            <GlassPanel className="flex h-full flex-col">
+              <div className="flex items-center justify-between px-4 pt-4">
+                <div className="text-xs font-semibold tracking-wide text-white/65">
+                  History
+                </div>
+                <button
+                  type="button"
+                  className="grid h-8 w-8 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-white/[0.08] hover:text-white"
+                >
+                  <IconChevronDown className="h-4 w-4" />
+                </button>
+              </div>
 
-            <div className="mt-3 px-3">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm text-white"
-              >
-                <span className="flex items-center gap-2">
-                  <span className="grid h-6 w-6 place-items-center rounded-lg bg-white/10">
-                    <IconSketch className="h-4 w-4 text-white/70" />
+              <div className="mt-3 px-3 pb-2">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-white/[0.09]"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="grid h-6 w-6 place-items-center rounded-lg bg-white/[0.06] text-white/70 ring-1 ring-inset ring-white/[0.08]">
+                      <IconSketch className="h-4 w-4" />
+                    </span>
+                    Sketch 01
                   </span>
-                  Sketch 01
-                </span>
-                <IconChevronRight className="h-4 w-4 text-white/50" />
-              </button>
-            </div>
+                  <IconChevronRight className="h-4 w-4 text-white/45" />
+                </button>
+              </div>
 
-            <div className="flex-1" />
+              <div className="flex-1" />
+            </GlassPanel>
           </aside>
         </div>
       </div>
     </main>
+  );
+}
+
+function GlassPanel(props: { className?: string; children: ReactNode }) {
+  return (
+    <div
+      className={[
+        "relative overflow-hidden rounded-2xl border border-white/10 bg-black/20 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl backdrop-saturate-150",
+        props.className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.08] via-white/[0.02] to-transparent"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/[0.06]"
+      />
+      <div className="relative h-full w-full">{props.children}</div>
+    </div>
   );
 }
 
@@ -306,6 +344,23 @@ function IconChevronRight(props: IconProps) {
       className={props.className}
     >
       <path d="M10 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+function IconCornerDownRight(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <path d="M6 6v6a3 3 0 0 0 3 3h9" />
+      <path d="M15 12l3 3-3 3" />
     </svg>
   );
 }
