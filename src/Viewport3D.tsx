@@ -112,6 +112,18 @@ function Viewport3DContent() {
     [],
   );
 
+  useEffect(() => {
+    if (projection !== "orthographic") return;
+
+    const perspective = perspectiveCameraRef.current;
+    if (!perspective) return;
+
+    if (perspective.fov !== DEFAULT_PERSPECTIVE_FOV_DEG) {
+      perspective.fov = DEFAULT_PERSPECTIVE_FOV_DEG;
+      perspective.updateProjectionMatrix();
+    }
+  }, [projection]);
+
   useFrame(() => {
     const morph = projectionMorphRef.current;
     if (!morph) return;
@@ -187,11 +199,6 @@ function Viewport3DContent() {
       controls.update(0);
 
       if (t < 1) return;
-
-      if (perspective) {
-        perspective.fov = DEFAULT_PERSPECTIVE_FOV_DEG;
-        perspective.updateProjectionMatrix();
-      }
 
       const orthographic = orthographicCameraRef.current;
       if (orthographic) {
