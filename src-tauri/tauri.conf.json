@@ -19,13 +19,12 @@
         "theme": "Dark",
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "transparent": true,
-        "windowEffects": {
-          "effects": [
-            "hudWindow"
-          ],
-          "state": "active"
-        }
+        "decorations": true,
+        "trafficLightPosition": {
+          "x": 12,
+          "y": 26
+        },
+        "transparent": false
       }
     ],
     "security": {
@@ -34,6 +33,6 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"]
+    "targets": ["app"]
   }
 }
