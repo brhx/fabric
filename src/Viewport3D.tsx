@@ -1,55 +1,35 @@
 import {
   CameraControls,
   CameraControlsImpl,
-  GizmoHelper,
-  GizmoViewport,
-  GizmoViewcube,
-  Html,
+  OrthographicCamera as DreiOrthographicCamera,
+  PerspectiveCamera as DreiPerspectiveCamera,
 } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { LuRotateCcw, LuRotateCw } from "react-icons/lu";
 import {
-  Camera,
   MathUtils,
+  AxesHelper,
+  LineBasicMaterial,
   Object3D,
-  PerspectiveCamera,
+  OrthographicCamera as ThreeOrthographicCamera,
+  PerspectiveCamera as ThreePerspectiveCamera,
   Plane,
-  Quaternion,
   Raycaster,
   Vector2,
   Vector3,
 } from "three";
+import { ViewCube } from "./ViewCube";
 
 const MIN_DISTANCE = 2;
 const MAX_DISTANCE = 200;
 const ROTATE_SPEED = 0.0022;
-const VIEWCUBE_SIZE_PX = 56;
-const VIEWCUBE_MARGIN_RIGHT_PX = 84;
-const VIEWCUBE_MARGIN_TOP_PX = 18;
-const VIEWCUBE_BASE_SIZE_PX = 60;
-const VIEWCUBE_AXIS_SCALE = 1.15;
-const VIEWCUBE_AXIS_OFFSET_X_PX = -VIEWCUBE_SIZE_PX / 2 - 8;
-const VIEWCUBE_AXIS_OFFSET_Y_PX = -VIEWCUBE_SIZE_PX / 2 - 6;
-const VIEWCUBE_BUTTON_SIZE_PX = 26;
-const VIEWCUBE_BUTTON_OFFSET_X_PX = VIEWCUBE_SIZE_PX / 2 + 18;
-const VIEWCUBE_BUTTON_OFFSET_Y_PX = VIEWCUBE_SIZE_PX / 2 - 6;
-const VIEWCUBE_RIGHT_EXTENT_PX = VIEWCUBE_BUTTON_OFFSET_X_PX + VIEWCUBE_BUTTON_SIZE_PX / 2;
-const VIEWCUBE_TOP_EXTENT_PX = VIEWCUBE_BUTTON_OFFSET_Y_PX + VIEWCUBE_BUTTON_SIZE_PX / 2;
+const MIN_ORTHO_ZOOM = 0.08;
+const MAX_ORTHO_ZOOM = 240;
+const ORTHO_SWITCH_TOLERANCE_RADIANS = 0.008;
+const ORTHO_SWITCH_IGNORE_MS = 520;
 
 export function Viewport3D(props: { className?: string }) {
-  const controlsRef = useRef<CameraControlsImpl | null>(null);
-
-  useEffect(() => {
-    const controls = controlsRef.current;
-    if (!controls) return;
-
-    controls.updateCameraUp();
-    controls.setLookAt(10, -10, 10, 0, 0, 0, false);
-    controls.update(0);
-  }, []);
-
   return (
     <div className={["h-full w-full", props.className].filter(Boolean).join(" ")}>
       <Canvas
@@ -60,39 +40,309 @@ export function Viewport3D(props: { className?: string }) {
         onCreated={({ gl }) => {
           gl.setClearColor("#0b0c10", 1);
         }}
-        camera={{
-          position: [10, -10, 10],
-          up: [0, 0, 1],
-          fov: 45,
-          near: 0.1,
-          far: 500,
-        }}
       >
-        <CameraControls
-          ref={controlsRef}
-          makeDefault
-          minDistance={MIN_DISTANCE}
-          maxDistance={MAX_DISTANCE}
-          minPolarAngle={0.01}
-          maxPolarAngle={Math.PI - 0.01}
-          mouseButtons={{
-            left: CameraControlsImpl.ACTION.ROTATE,
-            right: CameraControlsImpl.ACTION.TRUCK,
-            middle: CameraControlsImpl.ACTION.NONE,
-            wheel: CameraControlsImpl.ACTION.NONE,
-          }}
-          touches={{
-            one: CameraControlsImpl.ACTION.NONE,
-            two: CameraControlsImpl.ACTION.NONE,
-            three: CameraControlsImpl.ACTION.NONE,
-          }}
-        />
-        <TrackpadControls controls={controlsRef} />
-        <MainScene />
-        <ViewCube controls={controlsRef} />
+        <Viewport3DContent />
       </Canvas>
     </div>
   );
+}
+
+type PendingView = {
+  position: Vector3;
+  target: Vector3;
+  zoom: number | null;
+  enableTransition: boolean;
+};
+
+type OrthoLock = {
+  direction: Vector3;
+  ignoreUntil: number;
+  rebindDirectionAfterIgnore: boolean;
+};
+
+function Viewport3DContent() {
+  const { invalidate, size } = useThree();
+  const controlsRef = useRef<CameraControlsImpl | null>(null);
+  const perspectiveCameraRef = useRef<ThreePerspectiveCamera | null>(null);
+
+  const [projection, setProjection] = useState<"perspective" | "orthographic">("perspective");
+
+  const pendingViewRef = useRef<PendingView | null>(null);
+  const orthoLockRef = useRef<OrthoLock | null>(null);
+  const initializedRef = useRef(false);
+  const lastControlsInstanceRef = useRef<CameraControlsImpl | null>(null);
+
+  const scratch = useMemo(
+    () => ({
+      target: new Vector3(),
+      position: new Vector3(),
+      direction: new Vector3(),
+      nextPosition: new Vector3(),
+    }),
+    [],
+  );
+
+  useFrame(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    if (controls !== lastControlsInstanceRef.current) {
+      lastControlsInstanceRef.current = controls;
+      controls.updateCameraUp();
+    }
+
+    const pending = pendingViewRef.current;
+    if (pending) {
+      const wantsOrthographic = pending.zoom !== null;
+      const isOrthographic = (controls.camera as any)?.isOrthographicCamera === true;
+
+      if (wantsOrthographic !== isOrthographic) {
+        invalidate();
+        return;
+      }
+
+      pendingViewRef.current = null;
+
+      controls.setLookAt(
+        pending.position.x,
+        pending.position.y,
+        pending.position.z,
+        pending.target.x,
+        pending.target.y,
+        pending.target.z,
+        pending.enableTransition,
+      );
+
+      if (isOrthographic && pending.zoom !== null) {
+        controls.zoomTo(pending.zoom, pending.enableTransition);
+      }
+
+      controls.update(0);
+      invalidate();
+
+      return;
+    }
+
+    if (!initializedRef.current) {
+      controls.setLookAt(10, -10, 10, 0, 0, 0, false);
+      controls.update(0);
+      initializedRef.current = true;
+      invalidate();
+    }
+  }, -2);
+
+  const requestOrthoView = (worldDirection: [number, number, number]) => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    controls.getTarget(scratch.target);
+    controls.getPosition(scratch.position);
+
+    const radius = scratch.position.distanceTo(scratch.target);
+    if (!Number.isFinite(radius) || radius <= 0) return;
+
+    scratch.direction.set(...worldDirection);
+    if (scratch.direction.lengthSq() === 0) return;
+    scratch.direction.normalize();
+
+    scratch.nextPosition.copy(scratch.target).addScaledVector(scratch.direction, radius);
+
+    const now = performance.now();
+    const lock: OrthoLock = {
+      direction: scratch.direction.clone(),
+      ignoreUntil: now + ORTHO_SWITCH_IGNORE_MS,
+      rebindDirectionAfterIgnore: true,
+    };
+    orthoLockRef.current = lock;
+
+    let nextZoom: number | null = null;
+
+    if (projection === "orthographic") {
+      const ortho = controls.camera as ThreeOrthographicCamera;
+      nextZoom = ortho.zoom;
+    } else {
+      const perspective = perspectiveCameraRef.current;
+      const fov = perspective?.fov ?? 45;
+      const fovInRadians = (fov * Math.PI) / 180;
+      nextZoom = size.height / (2 * radius * Math.tan(fovInRadians / 2));
+    }
+
+    if (projection === "orthographic") {
+      controls.setLookAt(
+        scratch.nextPosition.x,
+        scratch.nextPosition.y,
+        scratch.nextPosition.z,
+        scratch.target.x,
+        scratch.target.y,
+        scratch.target.z,
+        true,
+      );
+      if (nextZoom !== null) controls.zoomTo(nextZoom, true);
+      controls.update(0);
+      invalidate();
+      return;
+    }
+
+    pendingViewRef.current = {
+      position: scratch.nextPosition.clone(),
+      target: scratch.target.clone(),
+      zoom: nextZoom,
+      enableTransition: true,
+    };
+    setProjection("orthographic");
+    invalidate();
+  };
+
+  const handleRotateAroundUp = (_radians: number) => {
+    void _radians;
+    const lock = orthoLockRef.current;
+    if (!lock || projection !== "orthographic") return;
+
+    lock.ignoreUntil = performance.now() + ORTHO_SWITCH_IGNORE_MS;
+    lock.rebindDirectionAfterIgnore = true;
+  };
+
+  return (
+    <>
+      <DreiPerspectiveCamera
+        ref={(node) => {
+          perspectiveCameraRef.current = node;
+        }}
+        makeDefault={projection === "perspective"}
+        position={[10, -10, 10]}
+        up={[0, 0, 1]}
+        fov={45}
+        near={0.1}
+        far={500}
+      />
+      <DreiOrthographicCamera
+        makeDefault={projection === "orthographic"}
+        position={[10, -10, 10]}
+        up={[0, 0, 1]}
+        near={0.1}
+        far={500}
+        zoom={1}
+      />
+
+      <CameraControls
+        ref={controlsRef}
+        makeDefault
+        minDistance={MIN_DISTANCE}
+        maxDistance={MAX_DISTANCE}
+        minPolarAngle={0.01}
+        maxPolarAngle={Math.PI - 0.01}
+        mouseButtons={{
+          left: CameraControlsImpl.ACTION.NONE,
+          right: CameraControlsImpl.ACTION.NONE,
+          middle: CameraControlsImpl.ACTION.NONE,
+          wheel: CameraControlsImpl.ACTION.NONE,
+        }}
+        touches={{
+          one: CameraControlsImpl.ACTION.NONE,
+          two: CameraControlsImpl.ACTION.NONE,
+          three: CameraControlsImpl.ACTION.NONE,
+        }}
+      />
+
+      <TrackpadControls controls={controlsRef} />
+      <OrthoProjectionManager
+        projection={projection}
+        setProjection={setProjection}
+        controlsRef={controlsRef}
+        orthoLockRef={orthoLockRef}
+        pendingViewRef={pendingViewRef}
+        perspectiveCameraRef={perspectiveCameraRef}
+      />
+
+      <MainScene />
+      <ViewCube
+        controls={controlsRef}
+        onSelectDirection={requestOrthoView}
+        onRotateAroundUp={handleRotateAroundUp}
+      />
+    </>
+  );
+}
+
+function OrthoProjectionManager(props: {
+  projection: "perspective" | "orthographic";
+  setProjection: (projection: "perspective" | "orthographic") => void;
+  controlsRef: RefObject<CameraControlsImpl | null>;
+  orthoLockRef: RefObject<OrthoLock | null>;
+  pendingViewRef: RefObject<PendingView | null>;
+  perspectiveCameraRef: RefObject<ThreePerspectiveCamera | null>;
+}) {
+  const { invalidate, size } = useThree();
+
+  const scratch = useMemo(
+    () => ({
+      target: new Vector3(),
+      position: new Vector3(),
+      direction: new Vector3(),
+      nextPosition: new Vector3(),
+    }),
+    [],
+  );
+
+  useFrame(() => {
+    if (props.projection !== "orthographic") return;
+    const lock = props.orthoLockRef.current;
+    if (!lock) return;
+
+    const controls = props.controlsRef.current;
+    if (!controls) return;
+
+    const now = performance.now();
+
+    if (lock.rebindDirectionAfterIgnore) {
+      if (controls.active) return;
+
+      controls.getTarget(scratch.target);
+      controls.getPosition(scratch.position);
+      scratch.direction.copy(scratch.position).sub(scratch.target);
+      if (scratch.direction.lengthSq() === 0) return;
+      scratch.direction.normalize();
+
+      lock.direction.copy(scratch.direction);
+      lock.rebindDirectionAfterIgnore = false;
+      lock.ignoreUntil = now + 80;
+      invalidate();
+      return;
+    }
+
+    if (now < lock.ignoreUntil) return;
+
+    controls.getTarget(scratch.target);
+    controls.getPosition(scratch.position);
+    scratch.direction.copy(scratch.position).sub(scratch.target);
+    if (scratch.direction.lengthSq() === 0) return;
+    scratch.direction.normalize();
+
+    const angle = scratch.direction.angleTo(lock.direction);
+    if (angle <= ORTHO_SWITCH_TOLERANCE_RADIANS) return;
+
+    const perspective = props.perspectiveCameraRef.current;
+    const fov = perspective?.fov ?? 45;
+    const fovInRadians = (fov * Math.PI) / 180;
+
+    const ortho = controls.camera as ThreeOrthographicCamera;
+    const zoom = Math.max(ortho.zoom, 1e-6);
+
+    const nextDistance = (size.height / (2 * zoom)) / Math.tan(fovInRadians / 2);
+    scratch.nextPosition.copy(scratch.target).addScaledVector(scratch.direction, nextDistance);
+
+    props.pendingViewRef.current = {
+      position: scratch.nextPosition.clone(),
+      target: scratch.target.clone(),
+      zoom: null,
+      enableTransition: false,
+    };
+    props.orthoLockRef.current = null;
+    props.setProjection("perspective");
+    invalidate();
+  });
+
+  return null;
 }
 
 function MainScene() {
@@ -105,9 +355,30 @@ function MainScene() {
         <gridHelper args={[200, 20, "#34343a", "#24242a"]} />
       </group>
 
-      <axesHelper args={[6]} />
+      <AxesOverlay size={6} />
     </>
   );
+}
+
+function AxesOverlay(props: { size: number }) {
+  const ref = useRef<AxesHelper | null>(null);
+
+  useEffect(() => {
+    const axes = ref.current;
+    if (!axes) return;
+
+    axes.renderOrder = 10;
+
+    const material = axes.material as LineBasicMaterial | LineBasicMaterial[];
+    const materials = Array.isArray(material) ? material : [material];
+    for (const m of materials) {
+      m.depthTest = false;
+      m.depthWrite = false;
+      m.toneMapped = false;
+    }
+  }, []);
+
+  return <axesHelper ref={ref} args={[props.size]} />;
 }
 
 function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null> }) {
@@ -138,7 +409,9 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
     const view = doc.defaultView;
     if (!view) return;
 
-    const perspectiveCamera = camera as PerspectiveCamera;
+    const isOrthographic = (camera as any)?.isOrthographicCamera === true;
+    const perspectiveCamera = camera as ThreePerspectiveCamera;
+    const orthographicCamera = camera as ThreeOrthographicCamera;
 
     const isSceneHelper = (object: Object3D | null) => {
       let current: Object3D | null = object;
@@ -178,7 +451,7 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
     const pickPivotAtClientPoint = (clientX: number, clientY: number, out: Vector3) => {
       if (!setPointer(clientX, clientY)) return;
 
-      scratch.raycaster.setFromCamera(scratch.pointer, perspectiveCamera);
+      scratch.raycaster.setFromCamera(scratch.pointer, camera);
       const intersections = scratch.raycaster.intersectObjects(scene.children, true);
       const intersection = intersections.find(({ object }) => !isSceneHelper(object));
 
@@ -204,16 +477,23 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
       const controls = props.controls.current;
       if (!controls) return;
 
-      controls.getTarget(scratch.tmpTarget);
-      controls.getPosition(scratch.tmpPosition);
-
-      const targetDistance = scratch.tmpPosition.distanceTo(scratch.tmpTarget);
-      if (!Number.isFinite(targetDistance) || targetDistance <= 0) return;
-
-      const fovInRadians = (perspectiveCamera.fov * Math.PI) / 180;
       const viewportHeight = Math.max(1, element.clientHeight);
-      const distanceScale =
-        (2 * targetDistance * Math.tan(fovInRadians / 2)) / viewportHeight;
+
+      let distanceScale = 0;
+      if (isOrthographic) {
+        const zoom = Math.max(orthographicCamera.zoom, 1e-6);
+        const orthoHeight = orthographicCamera.top - orthographicCamera.bottom;
+        distanceScale = orthoHeight / zoom / viewportHeight;
+      } else {
+        controls.getTarget(scratch.tmpTarget);
+        controls.getPosition(scratch.tmpPosition);
+
+        const targetDistance = scratch.tmpPosition.distanceTo(scratch.tmpTarget);
+        if (!Number.isFinite(targetDistance) || targetDistance <= 0) return;
+
+        const fovInRadians = (perspectiveCamera.fov * Math.PI) / 180;
+        distanceScale = (2 * targetDistance * Math.tan(fovInRadians / 2)) / viewportHeight;
+      }
 
       const panX = deltaX * distanceScale;
       const panY = deltaY * distanceScale;
@@ -231,11 +511,57 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
       controls.getTarget(scratch.tmpTarget);
       controls.getPosition(scratch.tmpPosition);
 
-      scratch.raycaster.setFromCamera(scratch.pointer, perspectiveCamera);
+      scratch.raycaster.setFromCamera(scratch.pointer, camera);
       const hitBefore = scratch.raycaster.ray.intersectPlane(
         scratch.pivotPlane,
         scratch.tmpZoomBefore,
       );
+
+      if (isOrthographic) {
+        const zoomFactor = Math.exp(deltaY * 0.001);
+        const nextZoom = MathUtils.clamp(
+          orthographicCamera.zoom / zoomFactor,
+          MIN_ORTHO_ZOOM,
+          MAX_ORTHO_ZOOM,
+        );
+
+        controls.getTarget(scratch.tmpTarget);
+        controls.getPosition(scratch.tmpPosition);
+
+        controls.zoomTo(nextZoom, false);
+        controls.update(0);
+
+        if (!hitBefore) {
+          invalidate();
+          return;
+        }
+
+        scratch.raycaster.setFromCamera(scratch.pointer, camera);
+        const hitAfter = scratch.raycaster.ray.intersectPlane(
+          scratch.pivotPlane,
+          scratch.tmpZoomAfter,
+        );
+
+        if (!hitAfter) {
+          invalidate();
+          return;
+        }
+
+        scratch.tmpDelta.copy(scratch.tmpZoomBefore).sub(scratch.tmpZoomAfter);
+
+        controls.setLookAt(
+          scratch.tmpPosition.x + scratch.tmpDelta.x,
+          scratch.tmpPosition.y + scratch.tmpDelta.y,
+          scratch.tmpPosition.z + scratch.tmpDelta.z,
+          scratch.tmpTarget.x + scratch.tmpDelta.x,
+          scratch.tmpTarget.y + scratch.tmpDelta.y,
+          scratch.tmpTarget.z + scratch.tmpDelta.z,
+          false,
+        );
+        controls.update(0);
+        invalidate();
+        return;
+      }
 
       scratch.tmpOffset.copy(scratch.tmpPosition).sub(scratch.tmpTarget);
       const currentDistance = scratch.tmpOffset.length();
@@ -269,7 +595,7 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
         return;
       }
 
-      scratch.raycaster.setFromCamera(scratch.pointer, perspectiveCamera);
+      scratch.raycaster.setFromCamera(scratch.pointer, camera);
       const hitAfter = scratch.raycaster.ray.intersectPlane(
         scratch.pivotPlane,
         scratch.tmpZoomAfter,
@@ -371,260 +697,4 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
   }, [camera, gl, invalidate, props.controls, scene, scratch]);
 
   return null;
-}
-
-function ViewCube(props: { controls: RefObject<CameraControlsImpl | null> }) {
-  const { gl, invalidate, camera } = useThree();
-  const [margin, setMargin] = useState<[number, number]>(() => [
-    VIEWCUBE_MARGIN_RIGHT_PX + VIEWCUBE_RIGHT_EXTENT_PX,
-    VIEWCUBE_MARGIN_TOP_PX + VIEWCUBE_TOP_EXTENT_PX,
-  ]);
-  const scratch = useMemo(
-    () => ({
-      target: new Vector3(),
-      position: new Vector3(),
-      normal: new Vector3(),
-      quaternion: new Quaternion(),
-      nextPosition: new Vector3(),
-    }),
-    [],
-  );
-
-  useEffect(() => {
-    const element = gl.domElement;
-    const doc = element.ownerDocument;
-    const view = doc.defaultView;
-    if (!view) return;
-
-    let frame: number | null = null;
-
-    const update = () => {
-      frame = null;
-
-      const canvasRect = element.getBoundingClientRect();
-      const viewportElement = doc.querySelector(
-        '[data-viewport-area="true"]',
-      ) as HTMLElement | null;
-      const viewportRect = viewportElement?.getBoundingClientRect() ?? canvasRect;
-
-      const rightInset = Math.max(0, canvasRect.right - viewportRect.right);
-      const topInset = Math.max(0, viewportRect.top - canvasRect.top);
-
-      const nextMargin: [number, number] = [
-        Math.round(rightInset + VIEWCUBE_MARGIN_RIGHT_PX + VIEWCUBE_RIGHT_EXTENT_PX),
-        Math.round(topInset + VIEWCUBE_MARGIN_TOP_PX + VIEWCUBE_TOP_EXTENT_PX),
-      ];
-
-      setMargin((current) => {
-        if (current[0] === nextMargin[0] && current[1] === nextMargin[1]) return current;
-        return nextMargin;
-      });
-      invalidate();
-    };
-
-    const schedule = () => {
-      if (frame !== null) return;
-      frame = view.requestAnimationFrame(update);
-    };
-
-    schedule();
-
-    view.addEventListener("resize", schedule);
-    view.addEventListener("scroll", schedule, { passive: true, capture: true } as any);
-
-    const resizeObserver =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(() => {
-            schedule();
-          });
-
-    const viewportElement = doc.querySelector(
-      '[data-viewport-area="true"]',
-    ) as HTMLElement | null;
-    if (resizeObserver && viewportElement) resizeObserver.observe(viewportElement);
-
-    return () => {
-      if (frame !== null) view.cancelAnimationFrame(frame);
-      view.removeEventListener("resize", schedule);
-      view.removeEventListener("scroll", schedule as any, true as any);
-      resizeObserver?.disconnect();
-    };
-  }, [gl, invalidate]);
-
-  const handleClick = (event: any) => {
-    event.stopPropagation();
-
-    const controls = props.controls.current;
-    if (!controls || !event.face) return null;
-
-    controls.getTarget(scratch.target);
-    controls.getPosition(scratch.position);
-
-    const radius = scratch.position.distanceTo(scratch.target);
-    if (!Number.isFinite(radius) || radius <= 0) return null;
-
-    scratch.normal.copy(event.face.normal);
-    if (event.object) {
-      event.object.getWorldQuaternion(scratch.quaternion);
-      scratch.normal.applyQuaternion(scratch.quaternion).normalize();
-    }
-
-    const poleThreshold = 0.98;
-    if (Math.abs(scratch.normal.z) > poleThreshold) {
-      scratch.normal.x += 0.001 * Math.sign(scratch.normal.z || 1);
-      scratch.normal.y += 0.001;
-      scratch.normal.normalize();
-    }
-
-    scratch.nextPosition.copy(scratch.target).addScaledVector(scratch.normal, radius);
-    controls.setLookAt(
-      scratch.nextPosition.x,
-      scratch.nextPosition.y,
-      scratch.nextPosition.z,
-      scratch.target.x,
-      scratch.target.y,
-      scratch.target.z,
-      false,
-    );
-    controls.update(0);
-    invalidate();
-    return null;
-  };
-
-  return (
-    <GizmoHelper alignment="top-right" margin={margin}>
-      <group>
-        <group
-          scale={VIEWCUBE_SIZE_PX / VIEWCUBE_BASE_SIZE_PX}
-          rotation={[Math.PI / 2, 0, 0]}
-        >
-          <GizmoViewcube
-            onClick={handleClick}
-            color="#2f323a"
-            textColor="rgba(255,255,255,0.9)"
-            strokeColor="rgba(255,255,255,0.16)"
-            hoverColor="#424552"
-            opacity={1}
-            font="600 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
-          />
-        </group>
-
-        <group
-          scale={VIEWCUBE_AXIS_SCALE}
-          rotation={[Math.PI / 2, 0, 0]}
-          position={[VIEWCUBE_AXIS_OFFSET_X_PX, VIEWCUBE_AXIS_OFFSET_Y_PX, -1]}
-        >
-          <GizmoViewport
-            axisColors={["#e15a5a", "#4a7cff", "#4fc07f"]}
-            axisScale={[0.8, 0.03, 0.03]}
-            hideAxisHeads
-            hideNegativeAxes
-          />
-
-          <group scale={40}>
-            <Html center position={[1.12, 0, 0]}>
-              <div
-                style={{
-                  pointerEvents: "none",
-                  fontSize: "12px",
-                  fontWeight: 700,
-                  color: "#e15a5a",
-                  textShadow: "0 2px 10px rgba(0,0,0,0.65)",
-                }}
-              >
-                X
-              </div>
-            </Html>
-
-            <Html center position={[0, 1.12, 0]}>
-              <div
-                style={{
-                  pointerEvents: "none",
-                  fontSize: "12px",
-                  fontWeight: 700,
-                  color: "#4a7cff",
-                  textShadow: "0 2px 10px rgba(0,0,0,0.65)",
-                }}
-              >
-                Z
-              </div>
-            </Html>
-          </group>
-        </group>
-
-        <ViewCubeButtons controls={props.controls} camera={camera} />
-      </group>
-    </GizmoHelper>
-  );
-}
-
-function ViewCubeButtons(props: {
-  controls: RefObject<CameraControlsImpl | null>;
-  camera: Camera;
-}) {
-  const groupRef = useRef<Object3D | null>(null);
-
-  useFrame(() => {
-    if (!groupRef.current) return;
-    groupRef.current.quaternion.copy(props.camera.quaternion);
-  });
-
-  return (
-    <group ref={groupRef}>
-      <Html center position={[-VIEWCUBE_BUTTON_OFFSET_X_PX, VIEWCUBE_BUTTON_OFFSET_Y_PX, 2]}>
-        <button
-          type="button"
-          data-ui-chrome="true"
-          aria-label="Rotate view left"
-          onClick={() => {
-            const controls = props.controls.current;
-            if (!controls) return;
-            controls.rotate(Math.PI / 2, 0, true);
-          }}
-          style={{
-            width: `${VIEWCUBE_BUTTON_SIZE_PX}px`,
-            height: `${VIEWCUBE_BUTTON_SIZE_PX}px`,
-            borderRadius: "999px",
-            border: "1px solid rgba(255,255,255,0.08)",
-            background: "rgba(16,18,24,0.92)",
-            display: "grid",
-            placeItems: "center",
-            color: "rgba(255,255,255,0.82)",
-            boxShadow: "0 10px 28px rgba(0,0,0,0.55)",
-            backdropFilter: "blur(10px)",
-          }}
-        >
-          <LuRotateCcw size={14} />
-        </button>
-      </Html>
-
-      <Html center position={[VIEWCUBE_BUTTON_OFFSET_X_PX, VIEWCUBE_BUTTON_OFFSET_Y_PX, 2]}>
-        <button
-          type="button"
-          data-ui-chrome="true"
-          aria-label="Rotate view right"
-          onClick={() => {
-            const controls = props.controls.current;
-            if (!controls) return;
-            controls.rotate(-Math.PI / 2, 0, true);
-          }}
-          style={{
-            width: `${VIEWCUBE_BUTTON_SIZE_PX}px`,
-            height: `${VIEWCUBE_BUTTON_SIZE_PX}px`,
-            borderRadius: "999px",
-            border: "1px solid rgba(255,255,255,0.08)",
-            background: "rgba(16,18,24,0.92)",
-            display: "grid",
-            placeItems: "center",
-            color: "rgba(255,255,255,0.82)",
-            boxShadow: "0 10px 28px rgba(0,0,0,0.55)",
-            backdropFilter: "blur(10px)",
-          }}
-        >
-          <LuRotateCw size={14} />
-        </button>
-      </Html>
-    </group>
-  );
 }

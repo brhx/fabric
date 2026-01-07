@@ -1,5 +1,8 @@
 import "./App.css";
-import type { ReactNode } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useRef, useState } from "react";
+import type { PointerEvent, ReactNode } from "react";
 import { Viewport3D } from "./Viewport3D";
 import {
   LuAnchor,
@@ -43,9 +46,7 @@ function App() {
             </TitleIconButton>
           </div>
 
-          <div className="flex-1 text-center text-sm font-medium text-zinc-200/90">
-            Untitled Project
-          </div>
+          <ProjectTitle />
 
           <div className="flex items-center gap-2 pr-2">
             <button
@@ -119,44 +120,45 @@ function App() {
             data-viewport-area="true"
             className="pointer-events-none relative flex-1 min-h-0 min-w-0 overflow-visible"
           >
+            <div className="pointer-events-none absolute -left-2 top-0 bottom-0 flex flex-col justify-between">
+              <Dock>
+                <DockButton label="Tool A">
+                  <span className="h-5 w-5 rounded-md bg-emerald-400" />
+                </DockButton>
+                <DockButton label="Tool B">
+                  <span className="h-5 w-5 rounded-md bg-fuchsia-400" />
+                </DockButton>
+                <DockButton label="Tool C">
+                  <span className="h-5 w-5 rounded-md bg-zinc-300" />
+                </DockButton>
+              </Dock>
 
-            <Dock className="absolute left-4 top-16">
-              <DockButton label="Tool A">
-                <span className="h-5 w-5 rounded-md bg-emerald-400" />
-              </DockButton>
-              <DockButton label="Tool B">
-                <span className="h-5 w-5 rounded-md bg-fuchsia-400" />
-              </DockButton>
-              <DockButton label="Tool C">
-                <span className="h-5 w-5 rounded-md bg-zinc-300" />
-              </DockButton>
-            </Dock>
+              <Dock>
+                <DockButton label="Search">
+                  <LuSearch className="h-5 w-5" />
+                </DockButton>
+                <DockButton label="Pan">
+                  <LuHand className="h-5 w-5" />
+                </DockButton>
+                <DockButton label="Zoom">
+                  <LuZoomIn className="h-5 w-5" />
+                </DockButton>
+                <DockButton label="Settings">
+                  <LuWrench className="h-5 w-5" />
+                </DockButton>
+              </Dock>
 
-            <Dock className="absolute left-4 top-[260px]">
-              <DockButton label="Search">
-                <LuSearch className="h-5 w-5" />
-              </DockButton>
-              <DockButton label="Pan">
-                <LuHand className="h-5 w-5" />
-              </DockButton>
-              <DockButton label="Zoom">
-                <LuZoomIn className="h-5 w-5" />
-              </DockButton>
-              <DockButton label="Settings">
-                <LuWrench className="h-5 w-5" />
-              </DockButton>
-            </Dock>
+              <Dock>
+                <DockButton label="Library">
+                  <LuLayers className="h-5 w-5" />
+                </DockButton>
+                <DockButton label="Console">
+                  <LuTerminal className="h-5 w-5" />
+                </DockButton>
+              </Dock>
+            </div>
 
-            <Dock className="absolute left-4 bottom-4">
-              <DockButton label="Library">
-                <LuLayers className="h-5 w-5" />
-              </DockButton>
-              <DockButton label="Console">
-                <LuTerminal className="h-5 w-5" />
-              </DockButton>
-            </Dock>
-
-            <Dock className="absolute right-4 top-16">
+            <Dock className="absolute -right-2 top-0">
               <DockButton label="Pin">
                 <LuPin className="h-5 w-5" />
               </DockButton>
@@ -269,3 +271,128 @@ function DockButton(props: { label: string; children: ReactNode }) {
 }
 
 export default App;
+
+const DRAG_ACTIVATION_DISTANCE_PX = 6;
+
+function ProjectTitle() {
+  const [projectName, setProjectName] = useState("Untitled Project");
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftName, setDraftName] = useState(projectName);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const ignoreNextBlurCommitRef = useRef(false);
+
+  const dragStateRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    startedDragging: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [isEditing]);
+
+  const commit = () => {
+    const next = draftName.trim() || "Untitled Project";
+    setProjectName(next);
+    setDraftName(next);
+    setIsEditing(false);
+  };
+
+  const cancel = () => {
+    setDraftName(projectName);
+    setIsEditing(false);
+  };
+
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (isEditing) return;
+    if (event.button !== 0) return;
+
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startedDragging: false,
+    };
+  };
+
+  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (isEditing) return;
+
+    const state = dragStateRef.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    if (state.startedDragging) return;
+
+    const dx = event.clientX - state.startX;
+    const dy = event.clientY - state.startY;
+    if (Math.hypot(dx, dy) < DRAG_ACTIVATION_DISTANCE_PX) return;
+
+    state.startedDragging = true;
+
+    if (!isTauri()) return;
+    getCurrentWindow()
+      .startDragging()
+      .catch(() => {
+        // ignored
+      });
+  };
+
+  const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    if (isEditing) return;
+
+    const state = dragStateRef.current;
+    dragStateRef.current = null;
+    if (!state || state.pointerId !== event.pointerId) return;
+    if (state.startedDragging) return;
+
+    setDraftName(projectName);
+    setIsEditing(true);
+  };
+
+  const onPointerCancel = () => {
+    dragStateRef.current = null;
+  };
+
+  return (
+    <div
+      className="flex min-w-0 flex-1 items-center justify-center px-2 text-sm font-medium text-zinc-200/90"
+      data-tauri-drag-region="false"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+    >
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          value={draftName}
+          onChange={(event) => setDraftName(event.target.value)}
+          onBlur={() => {
+            if (ignoreNextBlurCommitRef.current) {
+              ignoreNextBlurCommitRef.current = false;
+              return;
+            }
+            commit();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit();
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              ignoreNextBlurCommitRef.current = true;
+              cancel();
+            }
+          }}
+          data-tauri-drag-region="false"
+          className="h-8 w-full max-w-[520px] rounded-xl border border-white/10 bg-white/[0.06] px-3 text-center text-sm font-medium text-zinc-100 outline-none ring-1 ring-transparent placeholder:text-white/35 focus:border-blue-400/40 focus:ring-blue-400/25"
+        />
+      ) : (
+        <div className="select-none">{projectName}</div>
+      )}
+    </div>
+  );
+}
