@@ -23,28 +23,27 @@ import {
   Vector3,
 } from "three";
 
-const VIEWCUBE_MARGIN_RIGHT_PX = 132;
+const VIEWCUBE_MARGIN_RIGHT_PX = 52;
 const VIEWCUBE_MARGIN_TOP_PX = 24;
 
 const VIEWCUBE_DRAG_ROTATE_SPEED = 0.0042;
 const VIEWCUBE_DRAG_THRESHOLD_PX = 3;
 
-const VIEWCUBE_CUBE_SIZE_PX = 56;
-const VIEWCUBE_CUBE_RADIUS_PX = 6;
+const VIEWCUBE_CUBE_SIZE_PX = 38;
+const VIEWCUBE_CUBE_RADIUS_PX = 4;
 const VIEWCUBE_CUBE_LABEL_OFFSET_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 0.8;
-const VIEWCUBE_HIT_BAND_PX = 10;
+const VIEWCUBE_HIT_BAND_PX = 7;
 const VIEWCUBE_HOVER_COLOR = "#3b82f6";
 const VIEWCUBE_HOVER_OPACITY = 0.86;
 
 const VIEWCUBE_AXIS_SCALE = 0.62;
-const VIEWCUBE_AXIS_LENGTH_PX = 46;
-const VIEWCUBE_AXIS_RADIUS_PX = 1.25;
-const VIEWCUBE_AXIS_OFFSET_X_PX = -VIEWCUBE_CUBE_SIZE_PX / 2 - 20;
-const VIEWCUBE_AXIS_OFFSET_Y_PX = -VIEWCUBE_CUBE_SIZE_PX / 2 + 10;
+const VIEWCUBE_AXIS_LENGTH_PX = 32;
+const VIEWCUBE_AXIS_RADIUS_PX = 0.9;
+const VIEWCUBE_AXIS_CORNER_GAP_PX = 3.2;
 
-const VIEWCUBE_BUTTON_SIZE_PX = 34;
-const VIEWCUBE_BUTTON_OFFSET_X_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 34;
-const VIEWCUBE_BUTTON_OFFSET_Y_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 26;
+const VIEWCUBE_BUTTON_SIZE_PX = 24;
+const VIEWCUBE_BUTTON_OFFSET_X_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 23;
+const VIEWCUBE_BUTTON_OFFSET_Y_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 18;
 
 const VIEWCUBE_CONTENT_ROTATION: [number, number, number] = [Math.PI / 2, 0, 0];
 
@@ -520,6 +519,14 @@ export function ViewCube(props: ViewCubeProps) {
     ) as Record<(typeof FACE_LABELS)[number]["key"], CanvasTexture | null>;
   }, [gl]);
 
+  const axisCornerPosition = useMemo(() => {
+    const half = VIEWCUBE_CUBE_SIZE_PX / 2;
+    const corner = new Vector3(-half, -half, half);
+    const len = corner.length();
+    if (len > 0) corner.addScaledVector(corner, VIEWCUBE_AXIS_CORNER_GAP_PX / len);
+    return corner.toArray() as [number, number, number];
+  }, []);
+
   const axisLabelTextures = useMemo(() => {
     const anisotropy = gl.capabilities.getMaxAnisotropy() || 1;
     const makeTexture = (label: string, color: string) => {
@@ -653,47 +660,43 @@ export function ViewCube(props: ViewCubeProps) {
                 />
               </mesh>
             ))}
-          </group>
 
-          <group
-            position={[VIEWCUBE_AXIS_OFFSET_X_PX, VIEWCUBE_AXIS_OFFSET_Y_PX, 0]}
-            rotation={VIEWCUBE_CONTENT_ROTATION}
-            scale={VIEWCUBE_AXIS_SCALE}
-          >
-            <AxisLine
-              direction={[1, 0, 0]}
-              length={VIEWCUBE_AXIS_LENGTH_PX}
-              radius={VIEWCUBE_AXIS_RADIUS_PX}
-              color={COLOR_AXIS_X}
-            />
-            <AxisLine
-              direction={[0, 0, -1]}
-              length={VIEWCUBE_AXIS_LENGTH_PX * 0.62}
-              radius={VIEWCUBE_AXIS_RADIUS_PX}
-              color={COLOR_AXIS_Y}
-            />
-            <AxisLine
-              direction={[0, 1, 0]}
-              length={VIEWCUBE_AXIS_LENGTH_PX}
-              radius={VIEWCUBE_AXIS_RADIUS_PX}
-              color={COLOR_AXIS_Z}
-            />
+            <group position={axisCornerPosition} scale={VIEWCUBE_AXIS_SCALE}>
+              <AxisLine
+                direction={[1, 0, 0]}
+                length={VIEWCUBE_AXIS_LENGTH_PX}
+                radius={VIEWCUBE_AXIS_RADIUS_PX}
+                color={COLOR_AXIS_X}
+              />
+              <AxisLine
+                direction={[0, 0, -1]}
+                length={VIEWCUBE_AXIS_LENGTH_PX * 0.62}
+                radius={VIEWCUBE_AXIS_RADIUS_PX}
+                color={COLOR_AXIS_Y}
+              />
+              <AxisLine
+                direction={[0, 1, 0]}
+                length={VIEWCUBE_AXIS_LENGTH_PX}
+                radius={VIEWCUBE_AXIS_RADIUS_PX}
+                color={COLOR_AXIS_Z}
+              />
 
-            <mesh>
-              <sphereGeometry args={[2.2, 16, 16]} />
-              <meshBasicMaterial color={COLOR_AXIS_Y} />
-            </mesh>
+              <mesh raycast={() => null}>
+                <sphereGeometry args={[2.2, 16, 16]} />
+                <meshBasicMaterial color={COLOR_AXIS_Y} />
+              </mesh>
 
-            <AxisLabel
-              texture={axisLabelTextures.z}
-              position={[0, VIEWCUBE_AXIS_LENGTH_PX + 10, 0]}
-              scale={20}
-            />
-            <AxisLabel
-              texture={axisLabelTextures.x}
-              position={[VIEWCUBE_AXIS_LENGTH_PX + 10, 0, 0]}
-              scale={20}
-            />
+              <AxisLabel
+                texture={axisLabelTextures.z}
+                position={[0, VIEWCUBE_AXIS_LENGTH_PX + 10, 0]}
+                scale={20}
+              />
+              <AxisLabel
+                texture={axisLabelTextures.x}
+                position={[VIEWCUBE_AXIS_LENGTH_PX + 10, 0, 0]}
+                scale={20}
+              />
+            </group>
           </group>
         </group>
 
@@ -773,7 +776,10 @@ function ViewCubeHoverHighlight(props: { hit: ViewCubeHit | null }) {
 
   if (hit.kind === "face") {
     const normal = new Vector3(lx, ly, lz).normalize();
-    const position = normal.multiplyScalar(half + 0.32).toArray() as [number, number, number];
+    const position = normal
+      .clone()
+      .multiplyScalar(half + 0.32)
+      .toArray() as [number, number, number];
     return (
       <mesh
         raycast={() => null}
@@ -848,7 +854,7 @@ function AxisLine(props: {
   }, [props.direction, props.length]);
 
   return (
-    <mesh position={position} quaternion={quaternion}>
+    <mesh raycast={() => null} position={position} quaternion={quaternion}>
       <cylinderGeometry args={[props.radius, props.radius, props.length, 10]} />
       <meshBasicMaterial color={props.color} />
     </mesh>
@@ -862,7 +868,7 @@ function AxisLabel(props: {
 }) {
   if (!props.texture) return null;
   return (
-    <sprite position={props.position} scale={props.scale}>
+    <sprite raycast={() => null} position={props.position} scale={props.scale}>
       <spriteMaterial map={props.texture} transparent opacity={0.92} depthWrite={false} />
     </sprite>
   );

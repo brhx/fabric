@@ -32,6 +32,7 @@ const MAX_ORTHO_ZOOM = 240;
 const ORTHO_SWITCH_TOLERANCE_RADIANS = 0.008;
 const ORTHO_SWITCH_TOLERANCE_COS = Math.cos(ORTHO_SWITCH_TOLERANCE_RADIANS);
 const ORTHO_SWITCH_IGNORE_MS = 520;
+const AXES_OVERLAY_LENGTH = 45000;
 
 export function Viewport3D(props: { className?: string }) {
   return (
@@ -108,6 +109,8 @@ function Viewport3DContent() {
       position: new Vector3(),
       direction: new Vector3(),
       nextPosition: new Vector3(),
+      tmpDirection: new Vector3(),
+      tmpUp: new Vector3(),
     }),
     [],
   );
@@ -483,6 +486,30 @@ function Viewport3DContent() {
     if (scratch.direction.lengthSq() === 0) return;
     scratch.direction.normalize();
 
+    // If we snap to a pole direction (e.g. top/bottom), the roll/azimuth can be undefined and
+    // CameraControls may choose either side. Nudge the direction slightly toward the current
+    // horizontal view to keep the resulting orientation stable.
+    scratch.tmpUp.copy(controls.camera.up);
+    if (scratch.tmpUp.lengthSq() === 0) scratch.tmpUp.set(0, 0, 1);
+    scratch.tmpUp.normalize();
+
+    const poleThreshold = 0.985;
+    if (Math.abs(scratch.direction.dot(scratch.tmpUp)) > poleThreshold) {
+      scratch.tmpDirection.copy(scratch.position).sub(scratch.target);
+      if (scratch.tmpDirection.lengthSq() > 0) {
+        const alongUp = scratch.tmpDirection.dot(scratch.tmpUp);
+        scratch.tmpDirection.addScaledVector(scratch.tmpUp, -alongUp);
+      }
+
+      if (scratch.tmpDirection.lengthSq() === 0) {
+        scratch.tmpDirection.set(0, 1, 0);
+        if (Math.abs(scratch.tmpDirection.dot(scratch.tmpUp)) > 0.9) scratch.tmpDirection.set(1, 0, 0);
+      }
+
+      scratch.tmpDirection.normalize();
+      scratch.direction.addScaledVector(scratch.tmpDirection, 0.001).normalize();
+    }
+
     scratch.nextPosition.copy(scratch.target).addScaledVector(scratch.direction, radius);
 
     const now = performance.now();
@@ -736,7 +763,7 @@ function MainScene() {
         <gridHelper args={[200, 20, "#34343a", "#24242a"]} />
       </group>
 
-      <AxesOverlay size={6} />
+      <AxesOverlay size={AXES_OVERLAY_LENGTH} />
     </>
   );
 }
@@ -772,10 +799,12 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
       raycaster: new Raycaster(),
       pointer: new Vector2(),
       pivotPlane: new Plane(new Vector3(0, 0, 1), 0),
+      viewPlane: new Plane(),
       tmpTarget: new Vector3(),
       tmpPosition: new Vector3(),
       tmpPivot: new Vector3(),
       tmpOffset: new Vector3(),
+      tmpViewNormal: new Vector3(),
       tmpZoomBefore: new Vector3(),
       tmpZoomAfter: new Vector3(),
       tmpNextPosition: new Vector3(),
@@ -830,6 +859,10 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
     };
 
     const pickPivotAtClientPoint = (clientX: number, clientY: number, out: Vector3) => {
+      const controls = props.controls.current;
+      if (controls) controls.getTarget(out);
+      else out.set(0, 0, 0);
+
       if (!setPointer(clientX, clientY)) return;
 
       scratch.raycaster.setFromCamera(scratch.pointer, camera);
@@ -841,7 +874,15 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
         return;
       }
 
-      if (scratch.raycaster.ray.intersectPlane(scratch.pivotPlane, scratch.tmpPivot)) {
+      camera.getWorldDirection(scratch.tmpViewNormal).normalize();
+      const gridFacing = Math.abs(scratch.tmpViewNormal.dot(scratch.pivotPlane.normal)) >= 0.12;
+      if (gridFacing && scratch.raycaster.ray.intersectPlane(scratch.pivotPlane, scratch.tmpPivot)) {
+        out.copy(scratch.tmpPivot);
+        return;
+      }
+
+      scratch.viewPlane.setFromNormalAndCoplanarPoint(scratch.tmpViewNormal, out);
+      if (scratch.raycaster.ray.intersectPlane(scratch.viewPlane, scratch.tmpPivot)) {
         out.copy(scratch.tmpPivot);
       }
     };
