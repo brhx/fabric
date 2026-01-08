@@ -1,20 +1,21 @@
 import {
   CameraControlsImpl,
-  OrthographicCamera as DreiOrthographicCamera,
   PerspectiveCamera as DreiPerspectiveCamera,
 } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import { AxesHelper, LineBasicMaterial } from "three";
+import type { Vector3 } from "three";
 import { ViewCube } from "./ViewCube";
+import { GeoRoot } from "./geo/GeoRoot";
+import { useGeoFrame } from "./geo/useGeoFrame";
 import { StableCameraControls } from "./viewport/StableCameraControls";
 import { TrackpadControls } from "./viewport/TrackpadControls";
+import { ViewportDebugOverlay } from "./viewport/ViewportDebugOverlay";
 import {
   AXES_OVERLAY_LENGTH,
   MAX_DISTANCE,
-  MAX_ORTHO_ZOOM,
   MIN_DISTANCE,
-  MIN_ORTHO_ZOOM,
   PAN_SPEED,
   ROTATE_SPEED,
 } from "./viewport/constants";
@@ -42,6 +43,7 @@ export function Viewport3D(props: { className?: string }) {
 function Viewport3DContent() {
   const gl = useThree((state) => state.gl);
   const rig = useCameraRig();
+  const geo = useGeoFrame();
 
   useEffect(() => {
     const element = gl.domElement;
@@ -64,6 +66,7 @@ function Viewport3DContent() {
 
       event.preventDefault();
       event.stopPropagation();
+      geo.reset();
       rig.requestDefaultView(defaultView.id);
     };
 
@@ -71,12 +74,11 @@ function Viewport3DContent() {
     return () => {
       view.removeEventListener("keydown", onKeyDown, { capture: true });
     };
-  }, [gl, rig.requestDefaultView]);
+  }, [geo.reset, gl, rig.requestDefaultView]);
 
   return (
     <>
       <DreiPerspectiveCamera ref={rig.perspectiveCameraRef} up={[0, 0, 1]} near={0.1} far={50000} />
-      <DreiOrthographicCamera ref={rig.orthographicCameraRef} up={[0, 0, 1]} near={0.1} far={50000} />
 
       <StableCameraControls
         ref={rig.controlsRef}
@@ -105,27 +107,32 @@ function Viewport3DContent() {
         panSpeed={PAN_SPEED}
         minDistance={MIN_DISTANCE}
         maxDistance={MAX_DISTANCE}
-        minOrthoZoom={MIN_ORTHO_ZOOM}
-        maxOrthoZoom={MAX_ORTHO_ZOOM}
-        onOrbitInput={rig.handleOrbitInput}
+        onRenderPan={geo.translateRender}
       />
 
-      <MainScene />
+      <MainScene renderOffset={geo.renderOffset} />
+      <GeoRoot frame={geo.frame} />
+      <ViewportDebugOverlay
+        controlsRef={rig.controlsRef}
+        worldUnitsPerPixelRef={rig.worldUnitsPerPixelRef}
+        geo={{
+          geodetic: geo.geodetic,
+          originEcef: geo.originEcef,
+          renderOffset: geo.renderOffset,
+          frame: geo.frame,
+        }}
+      />
       <ViewCube
         controls={rig.controlsRef}
-        projection={rig.projection}
-        onSelectDirection={rig.enterOrthographicView}
-        onRotateAroundUp={rig.handleRotateAroundUp}
-        onOrbitInput={rig.handleOrbitInput}
         getWorldDirectionFromLocalDirection={rig.getWorldDirectionFromLocalDirection}
       />
     </>
   );
 }
 
-function MainScene() {
+function MainScene(props: { renderOffset: Vector3 }) {
   return (
-    <>
+    <group position={props.renderOffset}>
       <ambientLight intensity={0.6} />
 
       <group rotation={[Math.PI / 2, 0, 0]}>
@@ -134,7 +141,7 @@ function MainScene() {
       </group>
 
       <AxesOverlay size={AXES_OVERLAY_LENGTH} />
-    </>
+    </group>
   );
 }
 

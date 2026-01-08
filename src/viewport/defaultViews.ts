@@ -1,5 +1,3 @@
-import type { Projection } from "../camera";
-
 export type KeyboardShortcut = {
   key?: string;
   code?: string;
@@ -12,7 +10,6 @@ export type KeyboardShortcut = {
 export type DefaultView = {
   id: "home";
   label: string;
-  projection: Projection;
   target: [number, number, number];
   position: [number, number, number];
   shortcut?: KeyboardShortcut;
@@ -22,7 +19,6 @@ export const DEFAULT_VIEWS: DefaultView[] = [
   {
     id: "home",
     label: "Home",
-    projection: "perspective",
     target: [0, 0, 0],
     position: [10, -10, 10],
     shortcut: {

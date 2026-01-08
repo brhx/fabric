@@ -3,7 +3,6 @@ import {
   Edges,
   Html,
   Hud,
-  OrthographicCamera,
   PerspectiveCamera,
   RoundedBox,
 } from "@react-three/drei";
@@ -11,14 +10,13 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { LuRotateCcw, LuRotateCw } from "react-icons/lu";
-import { isPerspectiveCamera, type Projection } from "./camera";
+import { isPerspectiveCamera } from "./camera";
 import { stabilizePoleDirection } from "./viewport/poleNudge";
 import {
   CanvasTexture,
   Group,
   MathUtils,
   Mesh,
-  OrthographicCamera as ThreeOrthographicCamera,
   PerspectiveCamera as ThreePerspectiveCamera,
   Quaternion,
   Vector3,
@@ -26,8 +24,8 @@ import {
 
 const VIEWCUBE_SCALE = 0.75;
 
-const VIEWCUBE_MARGIN_RIGHT_PX = 52;
-const VIEWCUBE_MARGIN_TOP_PX = 24;
+export const VIEWCUBE_MARGIN_RIGHT_PX = 52;
+export const VIEWCUBE_MARGIN_TOP_PX = 24;
 
 const VIEWCUBE_DRAG_ROTATE_SPEED = 0.0042;
 const VIEWCUBE_DRAG_THRESHOLD_PX = 3;
@@ -59,8 +57,8 @@ const VIEWCUBE_CONTENT_ROTATION: [number, number, number] = [Math.PI / 2, 0, 0];
 const VIEWCUBE_PERSPECTIVE_DISTANCE_SCALE = 0.7;
 const VIEWCUBE_WIDGET_GAP_PX = 16 * VIEWCUBE_SCALE;
 
-const VIEWCUBE_WIDGET_WIDTH_PX = VIEWCUBE_BUTTON_OFFSET_X_PX * 2 + VIEWCUBE_BUTTON_SIZE_PX;
-const VIEWCUBE_WIDGET_HEIGHT_PX =
+export const VIEWCUBE_WIDGET_WIDTH_PX = VIEWCUBE_BUTTON_OFFSET_X_PX * 2 + VIEWCUBE_BUTTON_SIZE_PX;
+export const VIEWCUBE_WIDGET_HEIGHT_PX =
   VIEWCUBE_BUTTON_OFFSET_Y_PX +
   VIEWCUBE_BUTTON_SIZE_PX / 2 +
   (VIEWCUBE_CUBE_SIZE_PX / 2 + VIEWCUBE_WIDGET_GAP_PX) +
@@ -207,7 +205,6 @@ function getViewCubeHitFromLocalPoint(
 
 type ViewCubeProps = {
   controls: RefObject<CameraControlsImpl | null>;
-  projection: Projection;
   onSelectDirection?: (worldDirection: [number, number, number]) => void;
   onRotateAroundUp?: (radians: number) => boolean;
   onOrbitInput?: (azimuthRadians: number, polarRadians: number) => boolean;
@@ -222,7 +219,6 @@ export function ViewCube(props: ViewCubeProps) {
   ]);
 
   const hudPerspectiveCameraRef = useRef<ThreePerspectiveCamera | null>(null);
-  const hudOrthographicCameraRef = useRef<ThreeOrthographicCamera | null>(null);
   const cubeRef = useRef<Mesh | null>(null);
   const orientationRef = useRef<Group | null>(null);
   const dragStateRef = useRef<{
@@ -238,7 +234,6 @@ export function ViewCube(props: ViewCubeProps) {
   const [hoverHit, setHoverHit] = useState<ViewCubeHit | null>(null);
 
   const localToWorldDirection = props.getWorldDirectionFromLocalDirection ?? localDirectionToWorldDirection;
-
   const scratch = useMemo(
     () => ({
       quaternion: new Quaternion(),
@@ -339,22 +334,6 @@ export function ViewCube(props: ViewCubeProps) {
         );
       }
 
-      const hudOrtho = hudOrthographicCameraRef.current;
-      if (hudOrtho) {
-        hudOrtho.setViewOffset(
-          canvasWidth,
-          canvasHeight,
-          viewOffsetX,
-          viewOffsetY,
-          canvasWidth,
-          canvasHeight,
-        );
-        const nextZoom = 1 / VIEWCUBE_PERSPECTIVE_DISTANCE_SCALE;
-        if (hudOrtho.zoom !== nextZoom) {
-          hudOrtho.zoom = nextZoom;
-        }
-        hudOrtho.updateProjectionMatrix();
-      }
     }
     if (isPerspectiveCamera(sourceCamera)) {
       const hudPerspective = hudPerspectiveCameraRef.current;
@@ -363,14 +342,16 @@ export function ViewCube(props: ViewCubeProps) {
       const mainFovDeg = sourceCamera.fov;
       if (!Number.isFinite(mainFovDeg) || mainFovDeg <= 0) return;
 
-      const fovRad = MathUtils.degToRad(mainFovDeg);
+      const viewCubeFovDeg = MathUtils.clamp(mainFovDeg + 25, 55, 95);
+
+      const fovRad = MathUtils.degToRad(viewCubeFovDeg);
       const denom = 2 * Math.tan(fovRad / 2);
       if (!Number.isFinite(denom) || denom === 0) return;
 
       const distance = (size.height / denom) * VIEWCUBE_PERSPECTIVE_DISTANCE_SCALE;
       if (!Number.isFinite(distance) || distance <= 0) return;
 
-      hudPerspective.fov = mainFovDeg;
+      hudPerspective.fov = viewCubeFovDeg;
       hudPerspective.position.set(0, 0, distance);
       hudPerspective.lookAt(0, 0, 0);
       hudPerspective.updateProjectionMatrix();
@@ -599,19 +580,9 @@ export function ViewCube(props: ViewCubeProps) {
         ref={(node) => {
           hudPerspectiveCameraRef.current = node;
         }}
-        makeDefault={props.projection === "perspective"}
+        makeDefault
         position={[0, 0, 2000]}
         fov={45}
-        near={0.1}
-        far={50000}
-      />
-      <OrthographicCamera
-        ref={(node) => {
-          hudOrthographicCameraRef.current = node;
-        }}
-        makeDefault={props.projection === "orthographic"}
-        position={[0, 0, 200]}
-        zoom={1}
         near={0.1}
         far={50000}
       />
