@@ -302,6 +302,37 @@ export function ViewCube(props: ViewCubeProps) {
     scratch.matrix.copy(sourceCamera.matrixWorld).invert();
     orientation.quaternion.setFromRotationMatrix(scratch.matrix);
 
+    const canvasWidth = size.width;
+    const canvasHeight = size.height;
+    if (canvasWidth > 0 && canvasHeight > 0) {
+      const viewOffsetX = canvasWidth / 2 - margin[0];
+      const viewOffsetY = margin[1] - canvasHeight / 2;
+
+      const hudPerspective = hudPerspectiveCameraRef.current;
+      if (hudPerspective) {
+        hudPerspective.setViewOffset(
+          canvasWidth,
+          canvasHeight,
+          viewOffsetX,
+          viewOffsetY,
+          canvasWidth,
+          canvasHeight,
+        );
+      }
+
+      const hudOrtho = hudOrthographicCameraRef.current;
+      if (hudOrtho) {
+        hudOrtho.setViewOffset(
+          canvasWidth,
+          canvasHeight,
+          viewOffsetX,
+          viewOffsetY,
+          canvasWidth,
+          canvasHeight,
+        );
+        hudOrtho.updateProjectionMatrix();
+      }
+    }
     const wantsPerspective = (sourceCamera as any)?.isPerspectiveCamera === true;
     if (wantsPerspective) {
       const hudPerspective = hudPerspectiveCameraRef.current;
@@ -527,9 +558,6 @@ export function ViewCube(props: ViewCubeProps) {
     };
   }, [axisLabelTextures, faceTextures]);
 
-  const x = size.width / 2 - margin[0];
-  const y = size.height / 2 - margin[1];
-
   return (
     <Hud renderPriority={1}>
       <PerspectiveCamera
@@ -553,7 +581,7 @@ export function ViewCube(props: ViewCubeProps) {
         far={50000}
       />
 
-      <group position={[x, y, 0]}>
+      <group>
         <group ref={orientationRef}>
           <group rotation={VIEWCUBE_CONTENT_ROTATION}>
             <RoundedBox
