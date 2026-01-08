@@ -209,7 +209,8 @@ type ViewCubeProps = {
   controls: RefObject<CameraControlsImpl | null>;
   projection: Projection;
   onSelectDirection?: (worldDirection: [number, number, number]) => void;
-  onRotateAroundUp?: (radians: number) => void;
+  onRotateAroundUp?: (radians: number) => boolean;
+  onOrbitInput?: (azimuthRadians: number, polarRadians: number) => boolean;
   getWorldDirectionFromLocalDirection?: (localDirection: [number, number, number]) => [number, number, number];
 };
 
@@ -451,7 +452,12 @@ export function ViewCube(props: ViewCubeProps) {
       const controls = props.controls.current;
       if (!controls) return;
 
-      controls.rotate(-dx * VIEWCUBE_DRAG_ROTATE_SPEED, -dy * VIEWCUBE_DRAG_ROTATE_SPEED, false);
+      const azimuth = -dx * VIEWCUBE_DRAG_ROTATE_SPEED;
+      const polar = -dy * VIEWCUBE_DRAG_ROTATE_SPEED;
+      const handled = props.onOrbitInput?.(azimuth, polar);
+      if (!handled) {
+        controls.rotate(azimuth, polar, false);
+      }
       invalidate();
       return;
     }
@@ -736,8 +742,9 @@ export function ViewCube(props: ViewCubeProps) {
             onClick={() => {
               const controls = props.controls.current;
               if (!controls) return;
+              const handled = props.onRotateAroundUp?.(Math.PI / 2);
+              if (handled) return;
               controls.rotate(Math.PI / 2, 0, true);
-              props.onRotateAroundUp?.(Math.PI / 2);
             }}
           >
             <LuRotateCcw size={VIEWCUBE_BUTTON_ICON_SIZE_PX} />
@@ -754,8 +761,9 @@ export function ViewCube(props: ViewCubeProps) {
             onClick={() => {
               const controls = props.controls.current;
               if (!controls) return;
+              const handled = props.onRotateAroundUp?.(-Math.PI / 2);
+              if (handled) return;
               controls.rotate(-Math.PI / 2, 0, true);
-              props.onRotateAroundUp?.(-Math.PI / 2);
             }}
           >
             <LuRotateCw size={VIEWCUBE_BUTTON_ICON_SIZE_PX} />

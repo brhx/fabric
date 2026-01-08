@@ -22,7 +22,7 @@ export const DEFAULT_VIEWS: DefaultView[] = [
   {
     id: "home",
     label: "Home",
-    projection: "orthographic",
+    projection: "perspective",
     target: [0, 0, 0],
     position: [10, -10, 10],
     shortcut: {

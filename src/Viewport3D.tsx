@@ -107,6 +107,7 @@ function Viewport3DContent() {
         maxDistance={MAX_DISTANCE}
         minOrthoZoom={MIN_ORTHO_ZOOM}
         maxOrthoZoom={MAX_ORTHO_ZOOM}
+        onOrbitInput={rig.handleOrbitInput}
       />
 
       <MainScene />
@@ -115,6 +116,7 @@ function Viewport3DContent() {
         projection={rig.projection}
         onSelectDirection={rig.enterOrthographicView}
         onRotateAroundUp={rig.handleRotateAroundUp}
+        onOrbitInput={rig.handleOrbitInput}
         getWorldDirectionFromLocalDirection={rig.getWorldDirectionFromLocalDirection}
       />
     </>

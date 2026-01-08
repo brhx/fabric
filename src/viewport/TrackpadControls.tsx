@@ -15,6 +15,7 @@ export function TrackpadControls(props: {
   maxDistance: number;
   minOrthoZoom: number;
   maxOrthoZoom: number;
+  onOrbitInput?: (azimuthRadians: number, polarRadians: number) => boolean;
 }) {
   const { camera, gl, invalidate, scene } = useThree();
   const lastGestureScale = useRef<number | null>(null);
@@ -119,7 +120,12 @@ export function TrackpadControls(props: {
       const controls = props.controlsRef.current;
       if (!controls) return;
 
-      controls.rotate(deltaX * props.rotateSpeed, deltaY * props.rotateSpeed, false);
+      const azimuth = deltaX * props.rotateSpeed;
+      const polar = deltaY * props.rotateSpeed;
+      const handled = props.onOrbitInput?.(azimuth, polar);
+      if (handled) return;
+
+      controls.rotate(azimuth, polar, false);
       invalidate();
     };
 
@@ -345,6 +351,7 @@ export function TrackpadControls(props: {
     props.minOrthoZoom,
     props.panSpeed,
     props.rotateSpeed,
+    props.onOrbitInput,
     props.worldFrame,
     scene,
     scratch,
