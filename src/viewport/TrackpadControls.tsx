@@ -16,6 +16,7 @@ export function TrackpadControls(props: {
   minOrthoZoom: number;
   maxOrthoZoom: number;
   onOrbitInput?: (azimuthRadians: number, polarRadians: number) => boolean;
+  onRenderPan?: (deltaRender: Vector3) => void;
 }) {
   const { camera, gl, invalidate, scene } = useThree();
   const lastGestureScale = useRef<number | null>(null);
@@ -165,7 +166,35 @@ export function TrackpadControls(props: {
       const panX = deltaX * distanceScale * props.panSpeed;
       const panY = deltaY * distanceScale * props.panSpeed;
 
+      const shouldRebase = Boolean(props.onRenderPan);
+      if (shouldRebase) {
+        controls.getTarget(scratch.tmpTarget);
+        scratch.tmpPivot.copy(scratch.tmpTarget);
+      }
+
       controls.truck(panX, panY, false);
+      if (shouldRebase) {
+        controls.update(0);
+        controls.getTarget(scratch.tmpTarget);
+        scratch.tmpDelta.copy(scratch.tmpTarget).sub(scratch.tmpPivot);
+
+        if (scratch.tmpDelta.lengthSq() > 0) {
+          props.onRenderPan?.(scratch.tmpDelta);
+          controls.getPosition(scratch.tmpPosition);
+          scratch.tmpPosition.sub(scratch.tmpDelta);
+          scratch.tmpTarget.sub(scratch.tmpDelta);
+          controls.setLookAt(
+            scratch.tmpPosition.x,
+            scratch.tmpPosition.y,
+            scratch.tmpPosition.z,
+            scratch.tmpTarget.x,
+            scratch.tmpTarget.y,
+            scratch.tmpTarget.z,
+            false,
+          );
+          controls.update(0);
+        }
+      }
       invalidate();
     };
 
@@ -362,6 +391,7 @@ export function TrackpadControls(props: {
     props.panSpeed,
     props.rotateSpeed,
     props.onOrbitInput,
+    props.onRenderPan,
     props.worldFrame,
     scene,
     scratch,

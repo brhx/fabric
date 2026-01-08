@@ -6,6 +6,7 @@ import {
 import { Canvas, useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import { AxesHelper, LineBasicMaterial } from "three";
+import type { Vector3 } from "three";
 import { ViewCube } from "./ViewCube";
 import { GeoRoot } from "./geo/GeoRoot";
 import { useGeoFrame } from "./geo/useGeoFrame";
@@ -111,9 +112,10 @@ function Viewport3DContent() {
         minOrthoZoom={MIN_ORTHO_ZOOM}
         maxOrthoZoom={MAX_ORTHO_ZOOM}
         onOrbitInput={rig.handleOrbitInput}
+        onRenderPan={geo.translateRender}
       />
 
-      <MainScene />
+      <MainScene renderOffset={geo.renderOffset} />
       <GeoRoot frame={geo.frame} />
       <ViewCube
         controls={rig.controlsRef}
@@ -126,9 +128,9 @@ function Viewport3DContent() {
   );
 }
 
-function MainScene() {
+function MainScene(props: { renderOffset: Vector3 }) {
   return (
-    <>
+    <group position={props.renderOffset}>
       <ambientLight intensity={0.6} />
 
       <group rotation={[Math.PI / 2, 0, 0]}>
@@ -137,7 +139,7 @@ function MainScene() {
       </group>
 
       <AxesOverlay size={AXES_OVERLAY_LENGTH} />
-    </>
+    </group>
   );
 }
 
