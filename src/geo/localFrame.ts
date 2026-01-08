@@ -1,5 +1,10 @@
 import { Matrix3, Matrix4, Vector3 } from "three";
-import { ecefToGeodetic, enuBasisFromGeodetic, geodeticToEcef, type Geodetic } from "./wgs84";
+import {
+  ecefToGeodetic,
+  enuBasisFromGeodetic,
+  geodeticToEcef,
+  type Geodetic,
+} from "./wgs84";
 
 export type LocalEnuFrame = {
   originEcef: Vector3;
@@ -15,7 +20,9 @@ export function createLocalEnuFrameAtGeodetic(geo: Geodetic): LocalEnuFrame {
   return createLocalEnuFrameAtEcef(originEcef);
 }
 
-export function createLocalEnuFrameAtEcef(originEcefInput: Vector3): LocalEnuFrame {
+export function createLocalEnuFrameAtEcef(
+  originEcefInput: Vector3,
+): LocalEnuFrame {
   const originEcef = originEcefInput.clone();
 
   const geo = ecefToGeodetic(originEcef);
@@ -28,21 +35,42 @@ export function createLocalEnuFrameAtEcef(originEcefInput: Vector3): LocalEnuFra
   // +X = East, +Y = North, +Z = Up.
   // Then an ECEF point can be expressed as:
   // ecef = origin + east*x + north*y + up*z.
-  const renderToEcef = new Matrix4().makeBasis(eastEcef, northEcef, upEcef).setPosition(originEcef);
+  const renderToEcef = new Matrix4()
+    .makeBasis(eastEcef, northEcef, upEcef)
+    .setPosition(originEcef);
   const ecefToRender = renderToEcef.clone().invert();
 
-  return { originEcef, eastEcef, northEcef, upEcef, renderToEcef, ecefToRender };
+  return {
+    originEcef,
+    eastEcef,
+    northEcef,
+    upEcef,
+    renderToEcef,
+    ecefToRender,
+  };
 }
 
-export function ecefPointToRender(frame: LocalEnuFrame, ecef: Vector3, out: Vector3 = new Vector3()) {
+export function ecefPointToRender(
+  frame: LocalEnuFrame,
+  ecef: Vector3,
+  out: Vector3 = new Vector3(),
+) {
   return out.copy(ecef).applyMatrix4(frame.ecefToRender);
 }
 
-export function renderPointToEcef(frame: LocalEnuFrame, render: Vector3, out: Vector3 = new Vector3()) {
+export function renderPointToEcef(
+  frame: LocalEnuFrame,
+  render: Vector3,
+  out: Vector3 = new Vector3(),
+) {
   return out.copy(render).applyMatrix4(frame.renderToEcef);
 }
 
-export function ecefDirToRender(frame: LocalEnuFrame, ecefDir: Vector3, out: Vector3 = new Vector3()) {
+export function ecefDirToRender(
+  frame: LocalEnuFrame,
+  ecefDir: Vector3,
+  out: Vector3 = new Vector3(),
+) {
   const rotation = new Matrix3().setFromMatrix4(frame.ecefToRender);
   return out.copy(ecefDir).applyMatrix3(rotation);
 }

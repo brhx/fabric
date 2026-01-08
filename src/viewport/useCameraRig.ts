@@ -3,10 +3,14 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useMemo, useRef } from "react";
 import { PerspectiveCamera, Vector3 } from "three";
 import { isPerspectiveCamera } from "../camera";
-import { DEFAULT_PERSPECTIVE_FOV_DEG } from "./constants";
 import { viewHeightForPerspective } from "./cameraMath";
-import { DEFAULT_VIEW_ID, getDefaultView, type DefaultViewId } from "./defaultViews";
-import { type ViewBasis, type WorldFrame, ZUpFrame } from "./worldFrame";
+import { DEFAULT_PERSPECTIVE_FOV_DEG } from "./constants";
+import {
+  DEFAULT_VIEW_ID,
+  getDefaultView,
+  type DefaultViewId,
+} from "./defaultViews";
+import { ZUpFrame, type ViewBasis, type WorldFrame } from "./worldFrame";
 
 export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
   const worldFrame = options?.worldFrame ?? ZUpFrame;
@@ -109,9 +113,14 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
         .addScaledVector(scratch.viewBasis.up, localDirection[1])
         .addScaledVector(scratch.viewBasis.forward, localDirection[2]);
 
-      if (scratch.worldDirection.lengthSq() === 0) scratch.worldDirection.copy(scratch.viewBasis.up);
+      if (scratch.worldDirection.lengthSq() === 0)
+        scratch.worldDirection.copy(scratch.viewBasis.up);
       scratch.worldDirection.normalize();
-      return [scratch.worldDirection.x, scratch.worldDirection.y, scratch.worldDirection.z];
+      return [
+        scratch.worldDirection.x,
+        scratch.worldDirection.y,
+        scratch.worldDirection.z,
+      ];
     },
     [scratch, worldFrame],
   );
@@ -134,7 +143,9 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       controls.getTarget(scratch.target);
       const distance = scratch.position.distanceTo(scratch.target);
       if (Number.isFinite(distance) && distance > 0) {
-        const nextUnitsPerPixel = viewHeightForPerspective(distance, controls.camera.fov) / viewportHeightPx;
+        const nextUnitsPerPixel =
+          viewHeightForPerspective(distance, controls.camera.fov) /
+          viewportHeightPx;
         if (Number.isFinite(nextUnitsPerPixel) && nextUnitsPerPixel > 0) {
           worldUnitsPerPixelRef.current = nextUnitsPerPixel;
         }

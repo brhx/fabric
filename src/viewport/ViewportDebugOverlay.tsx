@@ -1,13 +1,17 @@
 import type { CameraControlsImpl } from "@react-three/drei";
-import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { MutableRefObject, RefObject } from "react";
-import { Vector3 } from "three";
 import { Html } from "@react-three/drei";
+import { useFrame, useThree } from "@react-three/fiber";
+import type { MutableRefObject, RefObject } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Vector3 } from "three";
 import { isPerspectiveCamera } from "../camera";
 import type { LocalEnuFrame } from "../geo/localFrame";
 import type { Geodetic } from "../geo/wgs84";
-import { VIEWCUBE_MARGIN_RIGHT_PX, VIEWCUBE_MARGIN_TOP_PX, VIEWCUBE_WIDGET_WIDTH_PX } from "../ViewCube";
+import {
+  VIEWCUBE_MARGIN_RIGHT_PX,
+  VIEWCUBE_MARGIN_TOP_PX,
+  VIEWCUBE_WIDGET_WIDTH_PX,
+} from "../ViewCube";
 
 function formatNumber(value: number, decimals: number) {
   if (!Number.isFinite(value)) return "NaN";
@@ -25,7 +29,12 @@ function radToDeg(rad: number) {
 export function ViewportDebugOverlay(props: {
   controlsRef: RefObject<CameraControlsImpl | null>;
   worldUnitsPerPixelRef: MutableRefObject<number>;
-  geo: { geodetic: Geodetic; originEcef: Vector3; renderOffset: Vector3; frame: LocalEnuFrame };
+  geo: {
+    geodetic: Geodetic;
+    originEcef: Vector3;
+    renderOffset: Vector3;
+    frame: LocalEnuFrame;
+  };
   enabledByDefault?: boolean;
 }) {
   const gl = useThree((state) => state.gl);
@@ -73,20 +82,29 @@ export function ViewportDebugOverlay(props: {
       frame = null;
 
       const canvasRect = element.getBoundingClientRect();
-      const viewportElement = doc.querySelector('[data-viewport-area="true"]') as HTMLElement | null;
-      const viewportRect = viewportElement?.getBoundingClientRect() ?? canvasRect;
+      const viewportElement = doc.querySelector(
+        '[data-viewport-area="true"]',
+      ) as HTMLElement | null;
+      const viewportRect =
+        viewportElement?.getBoundingClientRect() ?? canvasRect;
 
       const rightInset = Math.max(0, canvasRect.right - viewportRect.right);
       const topInset = Math.max(0, viewportRect.top - canvasRect.top);
 
       const gapPx = 12;
       const next = {
-        rightPx: Math.round(rightInset + VIEWCUBE_MARGIN_RIGHT_PX + VIEWCUBE_WIDGET_WIDTH_PX + gapPx),
+        rightPx: Math.round(
+          rightInset +
+            VIEWCUBE_MARGIN_RIGHT_PX +
+            VIEWCUBE_WIDGET_WIDTH_PX +
+            gapPx,
+        ),
         topPx: Math.round(topInset + VIEWCUBE_MARGIN_TOP_PX),
       };
 
       setLayout((current) => {
-        if (current.rightPx === next.rightPx && current.topPx === next.topPx) return current;
+        if (current.rightPx === next.rightPx && current.topPx === next.topPx)
+          return current;
         return next;
       });
     };
@@ -99,17 +117,23 @@ export function ViewportDebugOverlay(props: {
     scheduleLayout();
 
     view.addEventListener("resize", scheduleLayout);
-    view.addEventListener("scroll", scheduleLayout, { passive: true, capture: true });
+    view.addEventListener("scroll", scheduleLayout, {
+      passive: true,
+      capture: true,
+    });
 
     const resizeObserver =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(() => {
-            scheduleLayout();
-          });
+      typeof ResizeObserver === "undefined" ? null : (
+        new ResizeObserver(() => {
+          scheduleLayout();
+        })
+      );
 
-    const viewportElement = doc.querySelector('[data-viewport-area="true"]') as HTMLElement | null;
-    if (resizeObserver && viewportElement) resizeObserver.observe(viewportElement);
+    const viewportElement = doc.querySelector(
+      '[data-viewport-area="true"]',
+    ) as HTMLElement | null;
+    if (resizeObserver && viewportElement)
+      resizeObserver.observe(viewportElement);
 
     const isEditableTarget = (eventTarget: EventTarget | null) => {
       if (!(eventTarget instanceof Element)) return false;
@@ -130,13 +154,16 @@ export function ViewportDebugOverlay(props: {
     return () => {
       if (frame !== null) view.cancelAnimationFrame(frame);
       view.removeEventListener("resize", scheduleLayout);
-      view.removeEventListener("scroll", scheduleLayout, { capture: true } as any);
+      view.removeEventListener("scroll", scheduleLayout, {
+        capture: true,
+      } as any);
       resizeObserver?.disconnect();
       view.removeEventListener("keydown", onKeyDown, { capture: true } as any);
 
       root.remove();
       setPortalReady(false);
-      if (computed.position === "static") parent.style.position = previousPosition;
+      if (computed.position === "static")
+        parent.style.position = previousPosition;
     };
   }, [gl]);
 
@@ -180,7 +207,9 @@ export function ViewportDebugOverlay(props: {
     lines.push(`distance: ${formatNumber(distance, 3)}`);
     lines.push(`units/px: ${formatNumber(unitsPerPixel, 6)}`);
     lines.push("");
-    lines.push(`WGS84 lat/lon: ${formatNumber(latDeg, 6)}°, ${formatNumber(lonDeg, 6)}°`);
+    lines.push(
+      `WGS84 lat/lon: ${formatNumber(latDeg, 6)}°, ${formatNumber(lonDeg, 6)}°`,
+    );
     lines.push(`WGS84 height: ${formatNumber(geodetic.heightMeters, 3)} m`);
     lines.push(`originEcef (m): ${formatVec3(originEcef, 3)}`);
     lines.push(`renderOffset (m): ${formatVec3(renderOffset, 3)}`);

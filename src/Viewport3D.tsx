@@ -4,8 +4,8 @@ import {
 } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
-import { AxesHelper, LineBasicMaterial } from "three";
 import type { Vector3 } from "three";
+import { AxesHelper, LineBasicMaterial } from "three";
 import { ViewCube } from "./ViewCube";
 import { GeoRoot } from "./geo/GeoRoot";
 import { useGeoFrame } from "./geo/useGeoFrame";
@@ -19,16 +19,22 @@ import {
   PAN_SPEED,
   ROTATE_SPEED,
 } from "./viewport/constants";
-import { useCameraRig } from "./viewport/useCameraRig";
 import { matchDefaultViewShortcut } from "./viewport/defaultViews";
+import { useCameraRig } from "./viewport/useCameraRig";
 
 export function Viewport3D(props: { className?: string }) {
   return (
-    <div className={["h-full w-full", props.className].filter(Boolean).join(" ")}>
+    <div
+      className={["h-full w-full", props.className].filter(Boolean).join(" ")}
+    >
       <Canvas
         frameloop="demand"
         dpr={[1, 2]}
-        gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
+        gl={{
+          antialias: true,
+          alpha: false,
+          powerPreference: "high-performance",
+        }}
         style={{ touchAction: "none" }}
         onCreated={({ gl }) => {
           gl.setClearColor("#0b0c10", 1);
@@ -78,7 +84,12 @@ function Viewport3DContent() {
 
   return (
     <>
-      <DreiPerspectiveCamera ref={rig.perspectiveCameraRef} up={[0, 0, 1]} near={0.1} far={50000} />
+      <DreiPerspectiveCamera
+        ref={rig.perspectiveCameraRef}
+        up={[0, 0, 1]}
+        near={0.1}
+        far={50000}
+      />
 
       <StableCameraControls
         ref={rig.controlsRef}
@@ -124,7 +135,9 @@ function Viewport3DContent() {
       />
       <ViewCube
         controls={rig.controlsRef}
-        getWorldDirectionFromLocalDirection={rig.getWorldDirectionFromLocalDirection}
+        getWorldDirectionFromLocalDirection={
+          rig.getWorldDirectionFromLocalDirection
+        }
       />
     </>
   );

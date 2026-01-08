@@ -50,7 +50,8 @@ export const RadialUpFrame: WorldFrame = {
     radialUpAt(target, basis.up);
 
     scratch.east.copy(WORLD_NORTH_AXIS).cross(basis.up);
-    if (scratch.east.lengthSq() === 0) scratch.east.copy(WORLD_EAST_FALLBACK).cross(basis.up);
+    if (scratch.east.lengthSq() === 0)
+      scratch.east.copy(WORLD_EAST_FALLBACK).cross(basis.up);
     if (scratch.east.lengthSq() === 0) scratch.east.copy(X_RIGHT);
     scratch.east.normalize();
 

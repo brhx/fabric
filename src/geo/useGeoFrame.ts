@@ -18,7 +18,9 @@ export function useGeoFrame(initial?: Partial<Geodetic>) {
   const [originEcef, setOriginEcef] = useState<Vector3>(() =>
     geodeticToEcef(initialGeodetic, new Vector3()),
   );
-  const [renderOffset, setRenderOffset] = useState<Vector3>(() => new Vector3());
+  const [renderOffset, setRenderOffset] = useState<Vector3>(
+    () => new Vector3(),
+  );
 
   const geodetic = useMemo(() => ecefToGeodetic(originEcef), [originEcef]);
 

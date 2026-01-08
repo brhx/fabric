@@ -7,20 +7,20 @@ import {
   RoundedBox,
 } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LuRotateCcw, LuRotateCw } from "react-icons/lu";
-import { isPerspectiveCamera } from "./camera";
-import { stabilizePoleDirection } from "./viewport/poleNudge";
 import {
   CanvasTexture,
   Group,
   MathUtils,
   Mesh,
-  PerspectiveCamera as ThreePerspectiveCamera,
   Quaternion,
+  PerspectiveCamera as ThreePerspectiveCamera,
   Vector3,
 } from "three";
+import { isPerspectiveCamera } from "./camera";
+import { stabilizePoleDirection } from "./viewport/poleNudge";
 
 const VIEWCUBE_SCALE = 0.75;
 
@@ -32,7 +32,8 @@ const VIEWCUBE_DRAG_THRESHOLD_PX = 3;
 
 const VIEWCUBE_CUBE_SIZE_PX = 42 * VIEWCUBE_SCALE;
 const VIEWCUBE_CUBE_RADIUS_PX = 4.4 * VIEWCUBE_SCALE;
-const VIEWCUBE_CUBE_LABEL_OFFSET_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 0.8 * VIEWCUBE_SCALE;
+const VIEWCUBE_CUBE_LABEL_OFFSET_PX =
+  VIEWCUBE_CUBE_SIZE_PX / 2 + 0.8 * VIEWCUBE_SCALE;
 const VIEWCUBE_HIT_BAND_PX = 8 * VIEWCUBE_SCALE;
 const VIEWCUBE_HOVER_COLOR = "#3b82f6";
 const VIEWCUBE_HOVER_OPACITY = 0.86;
@@ -49,15 +50,18 @@ const VIEWCUBE_AXIS_LABEL_OFFSET_PX = 10 * VIEWCUBE_SCALE;
 const VIEWCUBE_AXIS_LABEL_SCALE = 20 * VIEWCUBE_SCALE;
 
 const VIEWCUBE_BUTTON_SIZE_PX = 26 * VIEWCUBE_SCALE;
-const VIEWCUBE_BUTTON_OFFSET_X_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 25 * VIEWCUBE_SCALE;
-const VIEWCUBE_BUTTON_OFFSET_Y_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 20 * VIEWCUBE_SCALE;
+const VIEWCUBE_BUTTON_OFFSET_X_PX =
+  VIEWCUBE_CUBE_SIZE_PX / 2 + 25 * VIEWCUBE_SCALE;
+const VIEWCUBE_BUTTON_OFFSET_Y_PX =
+  VIEWCUBE_CUBE_SIZE_PX / 2 + 20 * VIEWCUBE_SCALE;
 const VIEWCUBE_BUTTON_ICON_SIZE_PX = 18 * VIEWCUBE_SCALE;
 
 const VIEWCUBE_CONTENT_ROTATION: [number, number, number] = [Math.PI / 2, 0, 0];
 const VIEWCUBE_PERSPECTIVE_DISTANCE_SCALE = 0.7;
 const VIEWCUBE_WIDGET_GAP_PX = 16 * VIEWCUBE_SCALE;
 
-export const VIEWCUBE_WIDGET_WIDTH_PX = VIEWCUBE_BUTTON_OFFSET_X_PX * 2 + VIEWCUBE_BUTTON_SIZE_PX;
+export const VIEWCUBE_WIDGET_WIDTH_PX =
+  VIEWCUBE_BUTTON_OFFSET_X_PX * 2 + VIEWCUBE_BUTTON_SIZE_PX;
 export const VIEWCUBE_WIDGET_HEIGHT_PX =
   VIEWCUBE_BUTTON_OFFSET_Y_PX +
   VIEWCUBE_BUTTON_SIZE_PX / 2 +
@@ -96,7 +100,9 @@ function localDirectionToWorldDirection(
 
 function getViewCubeHitFromLocalPoint(
   localPoint: Vector3,
-  localToWorld: (direction: [number, number, number]) => [number, number, number],
+  localToWorld: (
+    direction: [number, number, number],
+  ) => [number, number, number],
 ): ViewCubeHit {
   const half = VIEWCUBE_CUBE_SIZE_PX / 2;
   const hitThreshold = Math.max(1, VIEWCUBE_HIT_BAND_PX);
@@ -208,7 +214,9 @@ type ViewCubeProps = {
   onSelectDirection?: (worldDirection: [number, number, number]) => void;
   onRotateAroundUp?: (radians: number) => boolean;
   onOrbitInput?: (azimuthRadians: number, polarRadians: number) => boolean;
-  getWorldDirectionFromLocalDirection?: (localDirection: [number, number, number]) => [number, number, number];
+  getWorldDirectionFromLocalDirection?: (
+    localDirection: [number, number, number],
+  ) => [number, number, number];
 };
 
 export function ViewCube(props: ViewCubeProps) {
@@ -233,7 +241,8 @@ export function ViewCube(props: ViewCubeProps) {
 
   const [hoverHit, setHoverHit] = useState<ViewCubeHit | null>(null);
 
-  const localToWorldDirection = props.getWorldDirectionFromLocalDirection ?? localDirectionToWorldDirection;
+  const localToWorldDirection =
+    props.getWorldDirectionFromLocalDirection ?? localDirectionToWorldDirection;
   const scratch = useMemo(
     () => ({
       quaternion: new Quaternion(),
@@ -261,18 +270,24 @@ export function ViewCube(props: ViewCubeProps) {
       const viewportElement = doc.querySelector(
         '[data-viewport-area="true"]',
       ) as HTMLElement | null;
-      const viewportRect = viewportElement?.getBoundingClientRect() ?? canvasRect;
+      const viewportRect =
+        viewportElement?.getBoundingClientRect() ?? canvasRect;
 
       const rightInset = Math.max(0, canvasRect.right - viewportRect.right);
       const topInset = Math.max(0, viewportRect.top - canvasRect.top);
 
       const nextMargin: [number, number] = [
-        Math.round(rightInset + VIEWCUBE_MARGIN_RIGHT_PX + VIEWCUBE_WIDGET_WIDTH_PX / 2),
-        Math.round(topInset + VIEWCUBE_MARGIN_TOP_PX + VIEWCUBE_WIDGET_HEIGHT_PX / 2),
+        Math.round(
+          rightInset + VIEWCUBE_MARGIN_RIGHT_PX + VIEWCUBE_WIDGET_WIDTH_PX / 2,
+        ),
+        Math.round(
+          topInset + VIEWCUBE_MARGIN_TOP_PX + VIEWCUBE_WIDGET_HEIGHT_PX / 2,
+        ),
       ];
 
       setMargin((current) => {
-        if (current[0] === nextMargin[0] && current[1] === nextMargin[1]) return current;
+        if (current[0] === nextMargin[0] && current[1] === nextMargin[1])
+          return current;
         return nextMargin;
       });
       invalidate();
@@ -289,16 +304,17 @@ export function ViewCube(props: ViewCubeProps) {
     view.addEventListener("scroll", schedule, { passive: true, capture: true });
 
     const resizeObserver =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(() => {
-            schedule();
-          });
+      typeof ResizeObserver === "undefined" ? null : (
+        new ResizeObserver(() => {
+          schedule();
+        })
+      );
 
     const viewportElement = doc.querySelector(
       '[data-viewport-area="true"]',
     ) as HTMLElement | null;
-    if (resizeObserver && viewportElement) resizeObserver.observe(viewportElement);
+    if (resizeObserver && viewportElement)
+      resizeObserver.observe(viewportElement);
 
     return () => {
       if (frame !== null) view.cancelAnimationFrame(frame);
@@ -333,7 +349,6 @@ export function ViewCube(props: ViewCubeProps) {
           canvasHeight,
         );
       }
-
     }
     if (isPerspectiveCamera(sourceCamera)) {
       const hudPerspective = hudPerspectiveCameraRef.current;
@@ -348,7 +363,8 @@ export function ViewCube(props: ViewCubeProps) {
       const denom = 2 * Math.tan(fovRad / 2);
       if (!Number.isFinite(denom) || denom === 0) return;
 
-      const distance = (size.height / denom) * VIEWCUBE_PERSPECTIVE_DISTANCE_SCALE;
+      const distance =
+        (size.height / denom) * VIEWCUBE_PERSPECTIVE_DISTANCE_SCALE;
       if (!Number.isFinite(distance) || distance <= 0) return;
 
       hudPerspective.fov = viewCubeFovDeg;
@@ -378,7 +394,9 @@ export function ViewCube(props: ViewCubeProps) {
       poleThreshold: 0.98,
     });
 
-    scratch.position.copy(scratch.target).addScaledVector(scratch.worldDirection, radius);
+    scratch.position
+      .copy(scratch.target)
+      .addScaledVector(scratch.worldDirection, radius);
 
     controls.setLookAt(
       scratch.position.x,
@@ -393,7 +411,10 @@ export function ViewCube(props: ViewCubeProps) {
     invalidate();
   };
 
-  const startCubeInteraction = (event: any, snapDirection: [number, number, number]) => {
+  const startCubeInteraction = (
+    event: any,
+    snapDirection: [number, number, number],
+  ) => {
     event.stopPropagation();
     event.target?.setPointerCapture?.(event.pointerId);
 
@@ -425,7 +446,8 @@ export function ViewCube(props: ViewCubeProps) {
       if (!state.didDrag) {
         const totalDx = clientX - state.startX;
         const totalDy = clientY - state.startY;
-        if (Math.hypot(totalDx, totalDy) >= VIEWCUBE_DRAG_THRESHOLD_PX) state.didDrag = true;
+        if (Math.hypot(totalDx, totalDy) >= VIEWCUBE_DRAG_THRESHOLD_PX)
+          state.didDrag = true;
       }
 
       if (!state.didDrag) return;
@@ -449,7 +471,9 @@ export function ViewCube(props: ViewCubeProps) {
     scratch.localPoint.copy(event.point);
     cube.worldToLocal(scratch.localPoint);
 
-    setHoverHit(getViewCubeHitFromLocalPoint(scratch.localPoint, localToWorldDirection));
+    setHoverHit(
+      getViewCubeHitFromLocalPoint(scratch.localPoint, localToWorldDirection),
+    );
     invalidate();
   };
 
@@ -492,7 +516,10 @@ export function ViewCube(props: ViewCubeProps) {
     scratch.localPoint.copy(event.point);
     cube.worldToLocal(scratch.localPoint);
 
-    const hit = getViewCubeHitFromLocalPoint(scratch.localPoint, localToWorldDirection);
+    const hit = getViewCubeHitFromLocalPoint(
+      scratch.localPoint,
+      localToWorldDirection,
+    );
     setHoverHit(hit);
     startCubeInteraction(event, hit.worldDirection);
     invalidate();
@@ -532,7 +559,8 @@ export function ViewCube(props: ViewCubeProps) {
     const half = VIEWCUBE_CUBE_SIZE_PX / 2;
     const corner = new Vector3(-half, -half, half);
     const len = corner.length();
-    if (len > 0) corner.addScaledVector(corner, VIEWCUBE_AXIS_CORNER_GAP_PX / len);
+    if (len > 0)
+      corner.addScaledVector(corner, VIEWCUBE_AXIS_CORNER_GAP_PX / len);
     return corner.toArray() as [number, number, number];
   }, []);
 
@@ -594,7 +622,11 @@ export function ViewCube(props: ViewCubeProps) {
               ref={(node) => {
                 cubeRef.current = node;
               }}
-              args={[VIEWCUBE_CUBE_SIZE_PX, VIEWCUBE_CUBE_SIZE_PX, VIEWCUBE_CUBE_SIZE_PX]}
+              args={[
+                VIEWCUBE_CUBE_SIZE_PX,
+                VIEWCUBE_CUBE_SIZE_PX,
+                VIEWCUBE_CUBE_SIZE_PX,
+              ]}
               radius={VIEWCUBE_CUBE_RADIUS_PX}
               smoothness={4}
               bevelSegments={3}
@@ -633,14 +665,26 @@ export function ViewCube(props: ViewCubeProps) {
                 onPointerDown={(event) => {
                   startCubeInteraction(
                     event,
-                    localToWorldDirection([localNormal.x, localNormal.y, localNormal.z]),
+                    localToWorldDirection([
+                      localNormal.x,
+                      localNormal.y,
+                      localNormal.z,
+                    ]),
                   );
                 }}
                 onPointerOver={() => {
-                  const [wx, wy, wz] = localToWorldDirection([localNormal.x, localNormal.y, localNormal.z]);
+                  const [wx, wy, wz] = localToWorldDirection([
+                    localNormal.x,
+                    localNormal.y,
+                    localNormal.z,
+                  ]);
                   setHoverHit({
                     kind: "face",
-                    localDirection: [localNormal.x, localNormal.y, localNormal.z],
+                    localDirection: [
+                      localNormal.x,
+                      localNormal.y,
+                      localNormal.z,
+                    ],
                     worldDirection: [wx, wy, wz],
                   });
                   invalidate();
@@ -654,7 +698,12 @@ export function ViewCube(props: ViewCubeProps) {
                   invalidate();
                 }}
               >
-                <planeGeometry args={[VIEWCUBE_CUBE_SIZE_PX * 0.78, VIEWCUBE_CUBE_SIZE_PX * 0.78]} />
+                <planeGeometry
+                  args={[
+                    VIEWCUBE_CUBE_SIZE_PX * 0.78,
+                    VIEWCUBE_CUBE_SIZE_PX * 0.78,
+                  ]}
+                />
                 <meshBasicMaterial
                   map={faceTextures[key] ?? undefined}
                   transparent
@@ -685,18 +734,28 @@ export function ViewCube(props: ViewCubeProps) {
               />
 
               <mesh raycast={() => null}>
-                <sphereGeometry args={[VIEWCUBE_AXIS_SPHERE_RADIUS_PX, 16, 16]} />
+                <sphereGeometry
+                  args={[VIEWCUBE_AXIS_SPHERE_RADIUS_PX, 16, 16]}
+                />
                 <meshBasicMaterial color={COLOR_AXIS_Y} />
               </mesh>
 
               <AxisLabel
                 texture={axisLabelTextures.z}
-                position={[0, VIEWCUBE_AXIS_LENGTH_PX + VIEWCUBE_AXIS_LABEL_OFFSET_PX, 0]}
+                position={[
+                  0,
+                  VIEWCUBE_AXIS_LENGTH_PX + VIEWCUBE_AXIS_LABEL_OFFSET_PX,
+                  0,
+                ]}
                 scale={VIEWCUBE_AXIS_LABEL_SCALE}
               />
               <AxisLabel
                 texture={axisLabelTextures.x}
-                position={[VIEWCUBE_AXIS_LENGTH_PX + VIEWCUBE_AXIS_LABEL_OFFSET_PX, 0, 0]}
+                position={[
+                  VIEWCUBE_AXIS_LENGTH_PX + VIEWCUBE_AXIS_LABEL_OFFSET_PX,
+                  0,
+                  0,
+                ]}
                 scale={VIEWCUBE_AXIS_LABEL_SCALE}
               />
             </group>
@@ -705,7 +764,11 @@ export function ViewCube(props: ViewCubeProps) {
 
         <Html
           transform
-          position={[-VIEWCUBE_BUTTON_OFFSET_X_PX, VIEWCUBE_BUTTON_OFFSET_Y_PX, 0]}
+          position={[
+            -VIEWCUBE_BUTTON_OFFSET_X_PX,
+            VIEWCUBE_BUTTON_OFFSET_Y_PX,
+            0,
+          ]}
           zIndexRange={[10, 0]}
         >
           <ViewCubeButton
@@ -724,7 +787,11 @@ export function ViewCube(props: ViewCubeProps) {
 
         <Html
           transform
-          position={[VIEWCUBE_BUTTON_OFFSET_X_PX, VIEWCUBE_BUTTON_OFFSET_Y_PX, 0]}
+          position={[
+            VIEWCUBE_BUTTON_OFFSET_X_PX,
+            VIEWCUBE_BUTTON_OFFSET_Y_PX,
+            0,
+          ]}
           zIndexRange={[10, 0]}
         >
           <ViewCubeButton
@@ -795,7 +862,9 @@ function ViewCubeHoverHighlight(props: { hit: ViewCubeHit | null }) {
         rotation={normalToPlaneRotation(normal)}
         renderOrder={2}
       >
-        <planeGeometry args={[VIEWCUBE_CUBE_SIZE_PX * 0.96, VIEWCUBE_CUBE_SIZE_PX * 0.96]} />
+        <planeGeometry
+          args={[VIEWCUBE_CUBE_SIZE_PX * 0.96, VIEWCUBE_CUBE_SIZE_PX * 0.96]}
+        />
         <meshBasicMaterial {...materialProps} />
       </mesh>
     );
@@ -833,7 +902,11 @@ function ViewCubeHoverHighlight(props: { hit: ViewCubeHit | null }) {
 
   const cornerSize = bevel * 0.92;
   const cornerOffset = half - cornerSize / 2 + VIEWCUBE_HOVER_EDGE_OFFSET_PX;
-  const position: [number, number, number] = [lx * cornerOffset, ly * cornerOffset, lz * cornerOffset];
+  const position: [number, number, number] = [
+    lx * cornerOffset,
+    ly * cornerOffset,
+    lz * cornerOffset,
+  ];
 
   return (
     <mesh raycast={() => null} position={position} renderOrder={2}>
@@ -858,7 +931,11 @@ function AxisLine(props: {
 
   const position = useMemo(() => {
     const dir = new Vector3(...props.direction).normalize();
-    return dir.multiplyScalar(props.length / 2).toArray() as [number, number, number];
+    return dir.multiplyScalar(props.length / 2).toArray() as [
+      number,
+      number,
+      number,
+    ];
   }, [props.direction, props.length]);
 
   return (
@@ -877,7 +954,12 @@ function AxisLabel(props: {
   if (!props.texture) return null;
   return (
     <sprite raycast={() => null} position={props.position} scale={props.scale}>
-      <spriteMaterial map={props.texture} transparent opacity={0.92} depthWrite={false} />
+      <spriteMaterial
+        map={props.texture}
+        transparent
+        opacity={0.92}
+        depthWrite={false}
+      />
     </sprite>
   );
 }

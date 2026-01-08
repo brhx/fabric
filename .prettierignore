@@ -1,0 +1,11 @@
+.cache
+.DS_Store
+dist
+dist-ssr
+node_modules
+pnpm-lock.yaml
+src-tauri/gen
+src-tauri/icons
+src-tauri/**/*.rs
+src-tauri/target
+src-tauri/Cargo.lock

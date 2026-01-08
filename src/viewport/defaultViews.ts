@@ -40,7 +40,9 @@ const DEFAULT_VIEWS_BY_ID: Record<DefaultViewId, DefaultView> = {
   home: DEFAULT_VIEWS[0],
 };
 
-export function getDefaultView(id: DefaultViewId = DEFAULT_VIEW_ID): DefaultView {
+export function getDefaultView(
+  id: DefaultViewId = DEFAULT_VIEW_ID,
+): DefaultView {
   return DEFAULT_VIEWS_BY_ID[id];
 }
 
@@ -58,7 +60,9 @@ const matchesKey = (shortcut: KeyboardShortcut, event: KeyboardEvent) => {
   return false;
 };
 
-export function matchDefaultViewShortcut(event: KeyboardEvent): DefaultView | null {
+export function matchDefaultViewShortcut(
+  event: KeyboardEvent,
+): DefaultView | null {
   for (const view of DEFAULT_VIEWS) {
     const shortcut = view.shortcut;
     if (!shortcut) continue;

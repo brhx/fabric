@@ -2,7 +2,10 @@ import { useMemo } from "react";
 import { Color, Vector3 } from "three";
 import type { LocalEnuFrame } from "./localFrame";
 
-export function GeoFrameDebug(props: { frame: LocalEnuFrame; sizeMeters?: number }) {
+export function GeoFrameDebug(props: {
+  frame: LocalEnuFrame;
+  sizeMeters?: number;
+}) {
   const size = props.sizeMeters ?? 100;
 
   const points = useMemo(() => {
@@ -33,10 +36,12 @@ export function GeoFrameDebug(props: { frame: LocalEnuFrame; sizeMeters?: number
 function Dot(props: { position: Vector3; color: string }) {
   const color = useMemo(() => new Color(props.color), [props.color]);
   return (
-    <mesh position={props.position.toArray() as [number, number, number]} raycast={() => null}>
+    <mesh
+      position={props.position.toArray() as [number, number, number]}
+      raycast={() => null}
+    >
       <sphereGeometry args={[5, 10, 10]} />
       <meshBasicMaterial color={color} depthTest={false} depthWrite={false} />
     </mesh>
   );
 }
-

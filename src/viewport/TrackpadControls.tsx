@@ -1,7 +1,7 @@
 import type { CameraControlsImpl } from "@react-three/drei";
-import { useEffect, useMemo, useRef } from "react";
-import type { RefObject } from "react";
 import { useThree } from "@react-three/fiber";
+import type { RefObject } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { MathUtils, Object3D, Plane, Raycaster, Vector2, Vector3 } from "three";
 import { isPerspectiveCamera } from "../camera";
 import type { WorldFrame } from "./worldFrame";
@@ -50,7 +50,8 @@ export function TrackpadControls(props: {
     const isSceneHelper = (object: Object3D | null) => {
       let current: Object3D | null = object;
       while (current) {
-        if (current.type === "GridHelper" || current.type === "AxesHelper") return true;
+        if (current.type === "GridHelper" || current.type === "AxesHelper")
+          return true;
         current = current.parent;
       }
       return false;
@@ -60,7 +61,11 @@ export function TrackpadControls(props: {
       eventTarget instanceof Element &&
       Boolean(eventTarget.closest?.('[data-ui-chrome="true"]'));
 
-    const isOverChrome = (clientX: number, clientY: number, eventTarget: EventTarget | null) => {
+    const isOverChrome = (
+      clientX: number,
+      clientY: number,
+      eventTarget: EventTarget | null,
+    ) => {
       if (isChromeTarget(eventTarget)) return true;
       const underPointer = doc.elementFromPoint(clientX, clientY);
       return Boolean(underPointer?.closest?.('[data-ui-chrome="true"]'));
@@ -82,7 +87,11 @@ export function TrackpadControls(props: {
       props.worldFrame.setPivotPlaneAt(target, scratch.pivotPlane);
     };
 
-    const pickPivotAtClientPoint = (clientX: number, clientY: number, out: Vector3) => {
+    const pickPivotAtClientPoint = (
+      clientX: number,
+      clientY: number,
+      out: Vector3,
+    ) => {
       const controls = props.controlsRef.current;
       if (controls) controls.getTarget(out);
       else out.set(0, 0, 0);
@@ -93,8 +102,13 @@ export function TrackpadControls(props: {
 
       const activeCamera = getActiveCamera();
       scratch.raycaster.setFromCamera(scratch.pointer, activeCamera);
-      const intersections = scratch.raycaster.intersectObjects(scene.children, true);
-      const intersection = intersections.find(({ object }) => !isSceneHelper(object));
+      const intersections = scratch.raycaster.intersectObjects(
+        scene.children,
+        true,
+      );
+      const intersection = intersections.find(
+        ({ object }) => !isSceneHelper(object),
+      );
 
       if (intersection) {
         out.copy(intersection.point);
@@ -102,14 +116,29 @@ export function TrackpadControls(props: {
       }
 
       activeCamera.getWorldDirection(scratch.tmpViewNormal).normalize();
-      const gridFacing = Math.abs(scratch.tmpViewNormal.dot(scratch.pivotPlane.normal)) >= 0.12;
-      if (gridFacing && scratch.raycaster.ray.intersectPlane(scratch.pivotPlane, scratch.tmpPivot)) {
+      const gridFacing =
+        Math.abs(scratch.tmpViewNormal.dot(scratch.pivotPlane.normal)) >= 0.12;
+      if (
+        gridFacing &&
+        scratch.raycaster.ray.intersectPlane(
+          scratch.pivotPlane,
+          scratch.tmpPivot,
+        )
+      ) {
         out.copy(scratch.tmpPivot);
         return;
       }
 
-      scratch.viewPlane.setFromNormalAndCoplanarPoint(scratch.tmpViewNormal, out);
-      if (scratch.raycaster.ray.intersectPlane(scratch.viewPlane, scratch.tmpPivot)) {
+      scratch.viewPlane.setFromNormalAndCoplanarPoint(
+        scratch.tmpViewNormal,
+        out,
+      );
+      if (
+        scratch.raycaster.ray.intersectPlane(
+          scratch.viewPlane,
+          scratch.tmpPivot,
+        )
+      ) {
         out.copy(scratch.tmpPivot);
       }
     };
@@ -152,7 +181,8 @@ export function TrackpadControls(props: {
       if (!Number.isFinite(targetDistance) || targetDistance <= 0) return;
 
       const fovInRadians = (activeCamera.fov * Math.PI) / 180;
-      distanceScale = (2 * targetDistance * Math.tan(fovInRadians / 2)) / viewportHeight;
+      distanceScale =
+        (2 * targetDistance * Math.tan(fovInRadians / 2)) / viewportHeight;
 
       const panX = deltaX * distanceScale * props.panSpeed;
       const panY = deltaY * distanceScale * props.panSpeed;
@@ -189,7 +219,11 @@ export function TrackpadControls(props: {
       invalidate();
     };
 
-    const zoomToCursorPlane = (deltaY: number, clientX: number, clientY: number) => {
+    const zoomToCursorPlane = (
+      deltaY: number,
+      clientX: number,
+      clientY: number,
+    ) => {
       const controls = props.controlsRef.current;
       if (!controls) return;
 
@@ -202,7 +236,10 @@ export function TrackpadControls(props: {
 
       const activeCamera = getActiveCamera();
       scratch.raycaster.setFromCamera(scratch.pointer, activeCamera);
-      const hitBefore = scratch.raycaster.ray.intersectPlane(scratch.pivotPlane, scratch.tmpZoomBefore);
+      const hitBefore = scratch.raycaster.ray.intersectPlane(
+        scratch.pivotPlane,
+        scratch.tmpZoomBefore,
+      );
 
       if (!isPerspectiveCamera(activeCamera)) return;
       scratch.tmpOffset.copy(scratch.tmpPosition).sub(scratch.tmpTarget);
@@ -210,10 +247,16 @@ export function TrackpadControls(props: {
       if (!Number.isFinite(currentDistance) || currentDistance <= 0) return;
 
       const zoomFactor = Math.exp(deltaY * 0.001);
-      const nextDistance = MathUtils.clamp(currentDistance * zoomFactor, props.minDistance, props.maxDistance);
+      const nextDistance = MathUtils.clamp(
+        currentDistance * zoomFactor,
+        props.minDistance,
+        props.maxDistance,
+      );
 
       scratch.tmpOffset.normalize();
-      scratch.tmpNextPosition.copy(scratch.tmpTarget).addScaledVector(scratch.tmpOffset, nextDistance);
+      scratch.tmpNextPosition
+        .copy(scratch.tmpTarget)
+        .addScaledVector(scratch.tmpOffset, nextDistance);
 
       controls.setLookAt(
         scratch.tmpNextPosition.x,
@@ -232,7 +275,10 @@ export function TrackpadControls(props: {
       }
 
       scratch.raycaster.setFromCamera(scratch.pointer, activeCamera);
-      const hitAfter = scratch.raycaster.ray.intersectPlane(scratch.pivotPlane, scratch.tmpZoomAfter);
+      const hitAfter = scratch.raycaster.ray.intersectPlane(
+        scratch.pivotPlane,
+        scratch.tmpZoomAfter,
+      );
 
       if (!hitAfter) {
         invalidate();
@@ -265,13 +311,23 @@ export function TrackpadControls(props: {
       } else if (event.shiftKey) {
         const now = view.performance?.now?.() ?? Date.now();
         const repickAfterMs = 180;
-        const shouldRepick = lastOrbitAt.current === null || now - lastOrbitAt.current > repickAfterMs;
+        const shouldRepick =
+          lastOrbitAt.current === null ||
+          now - lastOrbitAt.current > repickAfterMs;
 
         if (shouldRepick) {
-          pickPivotAtClientPoint(event.clientX, event.clientY, scratch.tmpPivot);
+          pickPivotAtClientPoint(
+            event.clientX,
+            event.clientY,
+            scratch.tmpPivot,
+          );
           const controls = props.controlsRef.current;
           if (controls) {
-            controls.setOrbitPoint(scratch.tmpPivot.x, scratch.tmpPivot.y, scratch.tmpPivot.z);
+            controls.setOrbitPoint(
+              scratch.tmpPivot.x,
+              scratch.tmpPivot.y,
+              scratch.tmpPivot.z,
+            );
           }
         }
 
@@ -316,8 +372,12 @@ export function TrackpadControls(props: {
     };
 
     view.addEventListener("wheel", onWheel, { passive: false });
-    view.addEventListener("gesturestart", onGestureStart, { passive: false } as any);
-    view.addEventListener("gesturechange", onGestureChange, { passive: false } as any);
+    view.addEventListener("gesturestart", onGestureStart, {
+      passive: false,
+    } as any);
+    view.addEventListener("gesturechange", onGestureChange, {
+      passive: false,
+    } as any);
     view.addEventListener("gestureend", onGestureEnd, { passive: true } as any);
 
     return () => {

@@ -1,9 +1,7 @@
-import "./App.css";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
-import { Viewport3D } from "./Viewport3D";
+import { useEffect, useRef, useState } from "react";
 import {
   LuAnchor,
   LuChevronDown,
@@ -24,12 +22,17 @@ import {
   LuWrench,
   LuZoomIn,
 } from "react-icons/lu";
+import "./App.css";
+import { Viewport3D } from "./Viewport3D";
 
 function App() {
   return (
     <main className="relative h-full w-full overflow-hidden text-zinc-100 selection:bg-blue-500/30 selection:text-white">
       <Viewport3D className="absolute inset-0" />
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 fabric-canvas" />
+      <div
+        aria-hidden="true"
+        className="fabric-canvas pointer-events-none absolute inset-0"
+      />
 
       <div className="pointer-events-none relative z-10 flex h-full w-full flex-col">
         <header
@@ -62,8 +65,11 @@ function App() {
           </div>
         </header>
 
-        <div className="flex flex-1 min-h-0 min-w-0 gap-2 p-2">
-          <aside className="pointer-events-auto w-72 min-h-0" data-ui-chrome="true">
+        <div className="flex min-h-0 min-w-0 flex-1 gap-2 p-2">
+          <aside
+            className="pointer-events-auto min-h-0 w-72"
+            data-ui-chrome="true"
+          >
             <GlassPanel className="flex h-full flex-col">
               <div className="flex items-center justify-between px-4 pt-4">
                 <div className="text-xs font-semibold tracking-wide text-white/65">
@@ -71,7 +77,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="mt-3 flex-1 min-h-0 overflow-auto px-3 pb-3 overscroll-contain">
+              <div className="mt-3 min-h-0 flex-1 overflow-auto overscroll-contain px-3 pb-3">
                 <button
                   type="button"
                   className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.05] bg-clip-padding px-3 py-2 text-sm text-white/75 hover:bg-white/[0.08] hover:text-white"
@@ -90,7 +96,7 @@ function App() {
                   <span className="grid w-4 place-items-center text-white/35 group-hover:text-white/55">
                     <LuCornerDownRight className="h-4 w-4" />
                   </span>
-                  <span className="grid h-6 w-6 place-items-center rounded-lg bg-white/[0.06] text-white/70 ring-1 ring-inset ring-white/[0.08]">
+                  <span className="grid h-6 w-6 place-items-center rounded-lg bg-white/[0.06] text-white/70 ring-1 ring-white/[0.08] ring-inset">
                     <LuPenTool className="h-4 w-4" />
                   </span>
                   Sketch 01
@@ -118,9 +124,9 @@ function App() {
 
           <section
             data-viewport-area="true"
-            className="pointer-events-none relative flex-1 min-h-0 min-w-0 overflow-visible"
+            className="pointer-events-none relative min-h-0 min-w-0 flex-1 overflow-visible"
           >
-            <div className="pointer-events-none absolute left-0 top-0 bottom-0 flex flex-col justify-between">
+            <div className="pointer-events-none absolute top-0 bottom-0 left-0 flex flex-col justify-between">
               <Dock>
                 <DockButton label="Tool A">
                   <span className="h-5 w-5 rounded-md bg-emerald-400" />
@@ -158,7 +164,7 @@ function App() {
               </Dock>
             </div>
 
-            <Dock className="absolute right-0 top-0">
+            <Dock className="absolute top-0 right-0">
               <DockButton label="Pin">
                 <LuPin className="h-5 w-5" />
               </DockButton>
@@ -171,7 +177,10 @@ function App() {
             </Dock>
           </section>
 
-          <aside className="pointer-events-auto w-80 min-h-0" data-ui-chrome="true">
+          <aside
+            className="pointer-events-auto min-h-0 w-80"
+            data-ui-chrome="true"
+          >
             <GlassPanel className="flex h-full flex-col">
               <div className="flex items-center justify-between px-4 pt-4">
                 <div className="text-xs font-semibold tracking-wide text-white/65">
@@ -185,13 +194,13 @@ function App() {
                 </button>
               </div>
 
-              <div className="mt-3 flex-1 min-h-0 overflow-auto px-3 pb-3 overscroll-contain">
+              <div className="mt-3 min-h-0 flex-1 overflow-auto overscroll-contain px-3 pb-3">
                 <button
                   type="button"
                   className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.06] bg-clip-padding px-3 py-2 text-sm text-white hover:bg-white/[0.09]"
                 >
                   <span className="flex items-center gap-2">
-                    <span className="grid h-6 w-6 place-items-center rounded-lg bg-white/[0.06] text-white/70 ring-1 ring-inset ring-white/[0.08]">
+                    <span className="grid h-6 w-6 place-items-center rounded-lg bg-white/[0.06] text-white/70 ring-1 ring-white/[0.08] ring-inset">
                       <LuPenTool className="h-4 w-4" />
                     </span>
                     Sketch 01
@@ -356,7 +365,7 @@ function ProjectTitle() {
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
     >
-      {isEditing ? (
+      {isEditing ?
         <input
           ref={inputRef}
           value={draftName}
@@ -380,11 +389,9 @@ function ProjectTitle() {
             }
           }}
           data-tauri-drag-region="false"
-          className="h-8 w-full max-w-[520px] rounded-xl border border-white/10 bg-white/[0.06] px-3 text-center text-sm font-medium text-zinc-100 outline-none ring-1 ring-transparent placeholder:text-white/35 focus:border-blue-400/40 focus:ring-blue-400/25"
+          className="h-8 w-full max-w-[520px] rounded-xl border border-white/10 bg-white/[0.06] px-3 text-center text-sm font-medium text-zinc-100 ring-1 ring-transparent outline-none placeholder:text-white/35 focus:border-blue-400/40 focus:ring-blue-400/25"
         />
-      ) : (
-        <div className="select-none">{projectName}</div>
-      )}
+      : <div className="select-none">{projectName}</div>}
     </div>
   );
 }

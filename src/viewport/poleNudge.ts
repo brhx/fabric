@@ -32,10 +32,10 @@ export function stabilizePoleDirection(options: {
 
   if (scratch.nudge.lengthSq() === 0) {
     scratch.nudge.set(1, 0, 0);
-    if (Math.abs(scratch.nudge.dot(scratch.up)) > 0.9) scratch.nudge.set(0, 1, 0);
+    if (Math.abs(scratch.nudge.dot(scratch.up)) > 0.9)
+      scratch.nudge.set(0, 1, 0);
   }
 
   scratch.nudge.normalize();
   options.direction.addScaledVector(scratch.nudge, epsilon).normalize();
 }
-
