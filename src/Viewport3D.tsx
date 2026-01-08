@@ -7,6 +7,7 @@ import {
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
+import { isOrthographicCamera, isPerspectiveCamera, type Projection } from "./camera";
 import {
   MathUtils,
   AxesHelper,
@@ -95,7 +96,7 @@ function Viewport3DContent() {
   const perspectiveCameraRef = useRef<ThreePerspectiveCamera | null>(null);
   const orthographicCameraRef = useRef<ThreeOrthographicCamera | null>(null);
 
-  const [projection, setProjection] = useState<"perspective" | "orthographic">("perspective");
+  const [projection, setProjection] = useState<Projection>("perspective");
 
   const orthoLockRef = useRef<OrthoLock | null>(null);
   const projectionTransitionRef = useRef<ProjectionTransition | null>(null);
@@ -143,7 +144,7 @@ function Viewport3DContent() {
 
     view.addEventListener("keydown", onKeyDown, { capture: true });
     return () => {
-      view.removeEventListener("keydown", onKeyDown as any, true as any);
+      view.removeEventListener("keydown", onKeyDown, { capture: true });
     };
   }, [gl, invalidate]);
 
@@ -156,8 +157,8 @@ function Viewport3DContent() {
 
     invalidate();
 
-    const isPerspective = (controls.camera as any)?.isPerspectiveCamera === true;
-    const isOrthographic = (controls.camera as any)?.isOrthographicCamera === true;
+    const isPerspective = isPerspectiveCamera(controls.camera);
+    const isOrthographic = isOrthographicCamera(controls.camera);
 
     const ease = (value: number) =>
       value < 0.5 ? 4 * value * value * value : 1 - Math.pow(-2 * value + 2, 3) / 2;
@@ -376,7 +377,7 @@ function Viewport3DContent() {
         MAX_ORTHO_ZOOM,
       );
 
-      const isOrthoCamera = (controls.camera as any)?.isOrthographicCamera === true;
+      const isOrthoCamera = isOrthographicCamera(controls.camera);
 
       if (defaultRequest.phase === "start") {
         cancelProjectionTransition({ cancelControlsTransition: true });
@@ -690,7 +691,7 @@ function Viewport3DContent() {
 }
 
 function OrthoProjectionManager(props: {
-  projection: "perspective" | "orthographic";
+  projection: Projection;
   controlsRef: RefObject<CameraControlsImpl | null>;
   orthoLockRef: RefObject<OrthoLock | null>;
   onLeaveOrthographic: () => void;
@@ -819,9 +820,9 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
     const view = doc.defaultView;
     if (!view) return;
 
-    const isOrthographic = (camera as any)?.isOrthographicCamera === true;
-    const perspectiveCamera = camera as ThreePerspectiveCamera;
-    const orthographicCamera = camera as ThreeOrthographicCamera;
+    const orthographicCamera = isOrthographicCamera(camera) ? camera : null;
+    const perspectiveCamera = isPerspectiveCamera(camera) ? camera : null;
+    const isOrthographic = orthographicCamera !== null;
 
     const isSceneHelper = (object: Object3D | null) => {
       let current: Object3D | null = object;
@@ -903,10 +904,12 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
 
       let distanceScale = 0;
       if (isOrthographic) {
+        if (!orthographicCamera) return;
         const zoom = Math.max(orthographicCamera.zoom, 1e-6);
         const orthoHeight = orthographicCamera.top - orthographicCamera.bottom;
         distanceScale = orthoHeight / zoom / viewportHeight;
       } else {
+        if (!perspectiveCamera) return;
         controls.getTarget(scratch.tmpTarget);
         controls.getPosition(scratch.tmpPosition);
 
@@ -940,6 +943,7 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
       );
 
       if (isOrthographic) {
+        if (!orthographicCamera) return;
         const zoomFactor = Math.exp(deltaY * 0.001);
         const nextZoom = MathUtils.clamp(
           orthographicCamera.zoom / zoomFactor,
@@ -985,6 +989,7 @@ function TrackpadControls(props: { controls: RefObject<CameraControlsImpl | null
         return;
       }
 
+      if (!perspectiveCamera) return;
       scratch.tmpOffset.copy(scratch.tmpPosition).sub(scratch.tmpTarget);
       const currentDistance = scratch.tmpOffset.length();
       if (!Number.isFinite(currentDistance) || currentDistance <= 0) return;

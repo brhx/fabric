@@ -11,6 +11,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { LuRotateCcw, LuRotateCw } from "react-icons/lu";
+import { isPerspectiveCamera, type Projection } from "./camera";
 import {
   CanvasTexture,
   Group,
@@ -29,21 +30,21 @@ const VIEWCUBE_MARGIN_TOP_PX = 24;
 const VIEWCUBE_DRAG_ROTATE_SPEED = 0.0042;
 const VIEWCUBE_DRAG_THRESHOLD_PX = 3;
 
-const VIEWCUBE_CUBE_SIZE_PX = 38;
-const VIEWCUBE_CUBE_RADIUS_PX = 4;
+const VIEWCUBE_CUBE_SIZE_PX = 42;
+const VIEWCUBE_CUBE_RADIUS_PX = 4.4;
 const VIEWCUBE_CUBE_LABEL_OFFSET_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 0.8;
-const VIEWCUBE_HIT_BAND_PX = 7;
+const VIEWCUBE_HIT_BAND_PX = 8;
 const VIEWCUBE_HOVER_COLOR = "#3b82f6";
 const VIEWCUBE_HOVER_OPACITY = 0.86;
 
 const VIEWCUBE_AXIS_SCALE = 0.62;
-const VIEWCUBE_AXIS_LENGTH_PX = 32;
-const VIEWCUBE_AXIS_RADIUS_PX = 0.9;
-const VIEWCUBE_AXIS_CORNER_GAP_PX = 3.2;
+const VIEWCUBE_AXIS_LENGTH_PX = 36;
+const VIEWCUBE_AXIS_RADIUS_PX = 1.0;
+const VIEWCUBE_AXIS_CORNER_GAP_PX = 3.6;
 
-const VIEWCUBE_BUTTON_SIZE_PX = 24;
-const VIEWCUBE_BUTTON_OFFSET_X_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 23;
-const VIEWCUBE_BUTTON_OFFSET_Y_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 18;
+const VIEWCUBE_BUTTON_SIZE_PX = 26;
+const VIEWCUBE_BUTTON_OFFSET_X_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 25;
+const VIEWCUBE_BUTTON_OFFSET_Y_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 20;
 
 const VIEWCUBE_CONTENT_ROTATION: [number, number, number] = [Math.PI / 2, 0, 0];
 
@@ -192,7 +193,7 @@ function getViewCubeHitFromLocalPoint(localPoint: Vector3): ViewCubeHit {
 
 type ViewCubeProps = {
   controls: RefObject<CameraControlsImpl | null>;
-  projection: "perspective" | "orthographic";
+  projection: Projection;
   onSelectDirection?: (worldDirection: [number, number, number]) => void;
   onRotateAroundUp?: (radians: number) => void;
 };
@@ -272,7 +273,7 @@ export function ViewCube(props: ViewCubeProps) {
     schedule();
 
     view.addEventListener("resize", schedule);
-    view.addEventListener("scroll", schedule, { passive: true, capture: true } as any);
+    view.addEventListener("scroll", schedule, { passive: true, capture: true });
 
     const resizeObserver =
       typeof ResizeObserver === "undefined"
@@ -289,7 +290,7 @@ export function ViewCube(props: ViewCubeProps) {
     return () => {
       if (frame !== null) view.cancelAnimationFrame(frame);
       view.removeEventListener("resize", schedule);
-      view.removeEventListener("scroll", schedule as any, true as any);
+      view.removeEventListener("scroll", schedule, { capture: true });
       resizeObserver?.disconnect();
     };
   }, [gl, invalidate]);
@@ -304,8 +305,8 @@ export function ViewCube(props: ViewCubeProps) {
     const canvasWidth = size.width;
     const canvasHeight = size.height;
     if (canvasWidth > 0 && canvasHeight > 0) {
-      const viewOffsetX = canvasWidth / 2 - margin[0];
-      const viewOffsetY = margin[1] - canvasHeight / 2;
+      const viewOffsetX = margin[0] - canvasWidth / 2;
+      const viewOffsetY = canvasHeight / 2 - margin[1];
 
       const hudPerspective = hudPerspectiveCameraRef.current;
       if (hudPerspective) {
@@ -332,12 +333,11 @@ export function ViewCube(props: ViewCubeProps) {
         hudOrtho.updateProjectionMatrix();
       }
     }
-    const wantsPerspective = (sourceCamera as any)?.isPerspectiveCamera === true;
-    if (wantsPerspective) {
+    if (isPerspectiveCamera(sourceCamera)) {
       const hudPerspective = hudPerspectiveCameraRef.current;
       if (!hudPerspective) return;
 
-      const mainFovDeg = Number((sourceCamera as any)?.fov ?? 45);
+      const mainFovDeg = sourceCamera.fov;
       if (!Number.isFinite(mainFovDeg) || mainFovDeg <= 0) return;
 
       const fovRad = MathUtils.degToRad(mainFovDeg);
