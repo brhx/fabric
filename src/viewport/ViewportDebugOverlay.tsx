@@ -2,8 +2,8 @@ import type { CameraControlsImpl } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MutableRefObject, RefObject } from "react";
-import { createPortal } from "react-dom";
 import { Vector3 } from "three";
+import { Html } from "@react-three/drei";
 import { isOrthographicCamera, isPerspectiveCamera, type Projection } from "../camera";
 import type { LocalEnuFrame } from "../geo/localFrame";
 import type { Geodetic } from "../geo/wgs84";
@@ -35,7 +35,8 @@ export function ViewportDebugOverlay(props: {
   const fallbackCamera = useThree((state) => state.camera);
   const [enabled, setEnabled] = useState(props.enabledByDefault ?? true);
   const [layout, setLayout] = useState(() => ({ rightPx: 8, topPx: 8 }));
-  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+  const portalRef = useRef<HTMLElement>(null as unknown as HTMLElement);
+  const [portalReady, setPortalReady] = useState(false);
   const preRef = useRef<HTMLPreElement | null>(null);
 
   const scratch = useMemo(
@@ -66,7 +67,8 @@ export function ViewportDebugOverlay(props: {
     if (computed.position === "static") parent.style.position = "relative";
 
     parent.appendChild(root);
-    setPortalRoot(root);
+    portalRef.current = root;
+    setPortalReady(true);
 
     let frame: number | null = null;
 
@@ -136,7 +138,7 @@ export function ViewportDebugOverlay(props: {
       view.removeEventListener("keydown", onKeyDown, { capture: true } as any);
 
       root.remove();
-      setPortalRoot(null);
+      setPortalReady(false);
       if (computed.position === "static") parent.style.position = previousPosition;
     };
   }, [gl]);
@@ -210,29 +212,30 @@ export function ViewportDebugOverlay(props: {
     pre.textContent = lines.join("\n");
   }, -100);
 
-  if (!portalRoot) return null;
+  if (!portalReady) return null;
 
-  return createPortal(
-    <div
-      style={{
-        display: enabled ? "block" : "none",
-        position: "absolute",
-        top: layout.topPx,
-        right: layout.rightPx,
-        padding: "10px 12px",
-        borderRadius: 10,
-        background: "rgba(0,0,0,0.6)",
-        color: "rgba(255,255,255,0.92)",
-        fontFamily:
-          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
-        fontSize: 12,
-        lineHeight: 1.25,
-        pointerEvents: "none",
-        whiteSpace: "pre",
-      }}
-    >
-      <pre ref={preRef} style={{ margin: 0 }} />
-    </div>,
-    portalRoot,
+  return (
+    <Html fullscreen portal={portalRef}>
+      <div
+        style={{
+          display: enabled ? "block" : "none",
+          position: "absolute",
+          top: layout.topPx,
+          right: layout.rightPx,
+          padding: "10px 12px",
+          borderRadius: 10,
+          background: "rgba(0,0,0,0.6)",
+          color: "rgba(255,255,255,0.92)",
+          fontFamily:
+            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
+          fontSize: 12,
+          lineHeight: 1.25,
+          pointerEvents: "none",
+          whiteSpace: "pre",
+        }}
+      >
+        <pre ref={preRef} style={{ margin: 0 }} />
+      </div>
+    </Html>
   );
 }
