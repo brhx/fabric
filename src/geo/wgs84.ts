@@ -7,8 +7,7 @@ export const WGS84_F = 1 / 298.257223563; // flattening
 export const WGS84_B = WGS84_A * (1 - WGS84_F); // semi-minor axis (polar radius)
 
 export const WGS84_E2 = WGS84_F * (2 - WGS84_F); // first eccentricity squared
-export const WGS84_EP2 =
-  (WGS84_A * WGS84_A - WGS84_B * WGS84_B) / (WGS84_B * WGS84_B); // second eccentricity squared
+export const WGS84_EP2 = (WGS84_A * WGS84_A - WGS84_B * WGS84_B) / (WGS84_B * WGS84_B); // second eccentricity squared
 
 export type Geodetic = {
   latRad: number;
@@ -92,3 +91,4 @@ export function enuBasisFromGeodetic(
 
   return { east: outEast, north: outNorth, up: outUp };
 }
+

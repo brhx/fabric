@@ -7,6 +7,8 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import { AxesHelper, LineBasicMaterial } from "three";
 import { ViewCube } from "./ViewCube";
+import { GeoRoot } from "./geo/GeoRoot";
+import { useGeoFrame } from "./geo/useGeoFrame";
 import { StableCameraControls } from "./viewport/StableCameraControls";
 import { TrackpadControls } from "./viewport/TrackpadControls";
 import {
@@ -42,6 +44,7 @@ export function Viewport3D(props: { className?: string }) {
 function Viewport3DContent() {
   const gl = useThree((state) => state.gl);
   const rig = useCameraRig();
+  const geo = useGeoFrame();
 
   useEffect(() => {
     const element = gl.domElement;
@@ -111,6 +114,7 @@ function Viewport3DContent() {
       />
 
       <MainScene />
+      <GeoRoot frame={geo.frame} />
       <ViewCube
         controls={rig.controlsRef}
         onSelectDirection={rig.enterOrthographicView}
