@@ -5,17 +5,11 @@ import { MathUtils, OrthographicCamera, PerspectiveCamera, Vector3 } from "three
 import { isOrthographicCamera, isPerspectiveCamera, type Projection } from "../camera";
 import {
   DEFAULT_PERSPECTIVE_FOV_DEG,
-  MIN_PERSPECTIVE_FOV_DEG,
-  MIN_DISTANCE,
-  MAX_DISTANCE,
   MAX_ORTHO_ZOOM,
   MIN_ORTHO_ZOOM,
-  ORTHO_SWITCH_IGNORE_MS,
-  ORTHO_SWITCH_TOLERANCE_COS,
 } from "./constants";
 import {
   distanceForViewHeight,
-  fovDegForViewHeightAtDistance,
   viewHeightForPerspective,
 } from "./cameraMath";
 import { DEFAULT_VIEW_ID, getDefaultView, type DefaultViewId } from "./defaultViews";
@@ -24,24 +18,11 @@ import { type ViewBasis, type WorldFrame, ZUpFrame } from "./worldFrame";
 
 type OrthoLock = {
   direction: Vector3;
-  ignoreUntil: number;
-  rebindDirectionAfterIgnore: boolean;
   poleLocked?: boolean;
 };
 
 type PendingOrthoEnter = {
-  direction: Vector3;
   viewHeight: number;
-  poleLocked: boolean;
-};
-
-type ProjectionBlend = {
-  kind: "enter-orthographic" | "exit-orthographic";
-  start: number;
-  duration: number;
-  viewHeight: number;
-  fromFovDeg: number;
-  toFovDeg: number;
 };
 
 export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
@@ -51,12 +32,17 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
   const controlsRef = useRef<CameraControlsImpl | null>(null);
   const perspectiveCameraRef = useRef<PerspectiveCamera | null>(null);
   const orthographicCameraRef = useRef<OrthographicCamera | null>(null);
+  const lastPerspectiveRef = useRef<{
+    position: Vector3;
+    target: Vector3;
+    up: Vector3;
+    fov: number;
+  } | null>(null);
 
   const [projection, setProjection] = useState<Projection>("perspective");
 
   const orthoLockRef = useRef<OrthoLock | null>(null);
   const pendingOrthoEnterRef = useRef<PendingOrthoEnter | null>(null);
-  const projectionBlendRef = useRef<ProjectionBlend | null>(null);
   const defaultViewRequestRef = useRef<DefaultViewId | null>(null);
   const initializedRef = useRef(false);
   const worldUnitsPerPixelRef = useRef<number>(1);
@@ -86,17 +72,8 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     [],
   );
 
-  const cancelProjectionTransitions = useCallback(() => {
+  const clearPendingOrthoEnter = useCallback(() => {
     pendingOrthoEnterRef.current = null;
-    projectionBlendRef.current = null;
-  }, []);
-
-  const computeOrthoBlendFovDeg = useCallback((viewHeight: number) => {
-    const safeViewHeight = Math.max(1e-6, viewHeight);
-    const maxDistance = Math.max(1e-6, MAX_DISTANCE);
-    const minFovByMaxDistance = fovDegForViewHeightAtDistance(safeViewHeight, maxDistance);
-    const next = Math.max(MIN_PERSPECTIVE_FOV_DEG, minFovByMaxDistance);
-    return MathUtils.clamp(next, MIN_PERSPECTIVE_FOV_DEG, 175);
   }, []);
 
   const applyCameraUp = useCallback((nextUp: Vector3) => {
@@ -215,7 +192,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       if (needsOrtho && !orthographicCameraRef.current) return false;
       if (!needsOrtho && !perspectiveCameraRef.current) return false;
 
-      cancelProjectionTransitions();
+      clearPendingOrthoEnter();
       clearOrthoLock();
       controls.stop();
 
@@ -272,7 +249,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       invalidate();
       return true;
     },
-    [cancelProjectionTransitions, clearOrthoLock, invalidate, scratch, setActiveProjection, size.height],
+    [clearPendingOrthoEnter, clearOrthoLock, invalidate, scratch, setActiveProjection, size.height],
   );
 
   const requestDefaultView = useCallback(
@@ -283,26 +260,11 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     [invalidate],
   );
 
-  const handleRotateAroundUp = useCallback(
-    (radians: number) => {
-      const lock = orthoLockRef.current;
-      if (projection === "orthographic" && lock?.poleLocked) {
-        return applyPoleRoll(radians);
-      }
-
-      if (!lock || projection !== "orthographic") return false;
-      lock.ignoreUntil = performance.now() + ORTHO_SWITCH_IGNORE_MS;
-      lock.rebindDirectionAfterIgnore = true;
-      return false;
-    },
-    [applyPoleRoll, projection],
-  );
-
   const enterOrthographicView = useCallback(
     (worldDirection: [number, number, number]) => {
       const controls = controlsRef.current;
       if (!controls) return;
-      cancelProjectionTransitions();
+      clearPendingOrthoEnter();
       controls.stop();
 
       controls.getTarget(scratch.target);
@@ -314,6 +276,12 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       let viewHeight = 0;
       if (isPerspectiveCamera(controls.camera)) {
         viewHeight = viewHeightForPerspective(radius, controls.camera.fov);
+        lastPerspectiveRef.current = {
+          position: scratch.position.clone(),
+          target: scratch.target.clone(),
+          up: controls.camera.up.clone(),
+          fov: controls.camera.fov,
+        };
       } else if (isOrthographicCamera(controls.camera)) {
         const zoom = Math.max(controls.camera.zoom, 1e-6);
         const orthoHeight = controls.camera.top - controls.camera.bottom;
@@ -348,11 +316,8 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
 
       scratch.nextPosition.copy(scratch.target).addScaledVector(scratch.direction, radius);
 
-      const now = performance.now();
       orthoLockRef.current = {
         direction: scratch.direction.clone(),
-        ignoreUntil: now + ORTHO_SWITCH_IGNORE_MS,
-        rebindDirectionAfterIgnore: !isPoleLocked,
         poleLocked: isPoleLocked,
       };
 
@@ -402,15 +367,13 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       controls.update(0);
 
       pendingOrthoEnterRef.current = {
-        direction: scratch.direction.clone(),
         viewHeight,
-        poleLocked: isPoleLocked,
       };
       invalidate();
     },
     [
       applyCameraUp,
-      cancelProjectionTransitions,
+      clearPendingOrthoEnter,
       invalidate,
       relaxPolarClamp,
       restorePolarClamp,
@@ -428,7 +391,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
 
     const wasPoleLocked = orthoLockRef.current?.poleLocked;
 
-    cancelProjectionTransitions();
+    clearPendingOrthoEnter();
     controls.stop();
 
     controls.getTarget(scratch.target);
@@ -443,29 +406,41 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     const viewHeight = orthoHeight / zoom;
     if (!Number.isFinite(viewHeight) || viewHeight <= 0) return;
 
-    const defaultDistance = distanceForViewHeight(viewHeight, MathUtils.degToRad(DEFAULT_PERSPECTIVE_FOV_DEG));
-    const targetDistance = MathUtils.clamp(defaultDistance, MIN_DISTANCE, MAX_DISTANCE);
-    const targetFovDeg =
-      targetDistance === defaultDistance
-        ? DEFAULT_PERSPECTIVE_FOV_DEG
-        : Math.max(
-            MIN_PERSPECTIVE_FOV_DEG,
-            fovDegForViewHeightAtDistance(viewHeight, Math.max(MIN_DISTANCE, targetDistance)),
-          );
-
-    const fromFovDeg = computeOrthoBlendFovDeg(viewHeight);
-    const fromDistance = MathUtils.clamp(
-      distanceForViewHeight(viewHeight, MathUtils.degToRad(fromFovDeg)),
-      MIN_DISTANCE,
-      MAX_DISTANCE,
-    );
-
-    scratch.nextPosition.copy(scratch.target).addScaledVector(scratch.direction, fromDistance);
-
     const perspective = perspectiveCameraRef.current;
     if (!perspective) return;
 
-    perspective.fov = fromFovDeg;
+    const snapshot = lastPerspectiveRef.current;
+    if (snapshot) {
+      perspective.fov = snapshot.fov;
+      perspective.position.copy(snapshot.position);
+      perspective.up.copy(snapshot.up);
+      perspective.lookAt(snapshot.target);
+      perspective.updateProjectionMatrix();
+
+      setActiveProjection("perspective");
+
+      controls.setLookAt(
+        snapshot.position.x,
+        snapshot.position.y,
+        snapshot.position.z,
+        snapshot.target.x,
+        snapshot.target.y,
+        snapshot.target.z,
+        false,
+      );
+      controls.update(0);
+
+      clearOrthoLock();
+      invalidate();
+      return;
+    }
+
+    const fovDeg = DEFAULT_PERSPECTIVE_FOV_DEG;
+    const distance = distanceForViewHeight(viewHeight, MathUtils.degToRad(fovDeg));
+
+    scratch.nextPosition.copy(scratch.target).addScaledVector(scratch.direction, distance);
+
+    perspective.fov = fovDeg;
     perspective.position.copy(scratch.nextPosition);
     perspective.up.copy(orthoCamera.up);
     perspective.lookAt(scratch.target);
@@ -487,33 +462,37 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     if (wasPoleLocked) startUpBlendToWorldUp();
     clearOrthoLock();
 
-    const duration = 180;
-    if (Math.abs(targetFovDeg - fromFovDeg) > 1e-4) {
-      projectionBlendRef.current = {
-        kind: "exit-orthographic",
-        start: performance.now(),
-        duration,
-        viewHeight,
-        fromFovDeg,
-        toFovDeg: targetFovDeg,
-      };
-    }
-
     invalidate();
   }, [
-    cancelProjectionTransitions,
+    clearPendingOrthoEnter,
     clearOrthoLock,
-    computeOrthoBlendFovDeg,
     invalidate,
     scratch,
     setActiveProjection,
     startUpBlendToWorldUp,
   ]);
 
+  const handleRotateAroundUp = useCallback(
+    (radians: number) => {
+      const lock = orthoLockRef.current;
+      if (projection !== "orthographic") return false;
+      if (lock?.poleLocked) {
+        return applyPoleRoll(radians);
+      }
+      leaveOrthographicView();
+      return false;
+    },
+    [applyPoleRoll, leaveOrthographicView, projection],
+  );
+
   const handleOrbitInput = useCallback(
     (azimuthRadians: number, polarRadians: number) => {
       const lock = orthoLockRef.current;
-      if (!lock?.poleLocked || projection !== "orthographic") return false;
+      if (projection !== "orthographic") return false;
+      if (!lock?.poleLocked) {
+        leaveOrthographicView();
+        return false;
+      }
 
       const absPolar = Math.abs(polarRadians);
       const absAzimuth = Math.abs(azimuthRadians);
@@ -613,62 +592,13 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     }
 
     const pendingEnter = pendingOrthoEnterRef.current;
-    if (pendingEnter && !projectionBlendRef.current) {
+    if (pendingEnter) {
       const perspectiveCamera = controls.camera;
       if (!isPerspectiveCamera(perspectiveCamera)) {
         pendingOrthoEnterRef.current = null;
       } else if (!controls.active) {
-
-        const toFovDeg = computeOrthoBlendFovDeg(pendingEnter.viewHeight);
-        const fromFovDeg = perspectiveCamera.fov;
-        const duration = 180;
-        const start = performance.now();
-
-        projectionBlendRef.current = {
-          kind: "enter-orthographic",
-          start: Math.abs(toFovDeg - fromFovDeg) <= 1e-4 ? start - duration : start,
-          duration,
-          viewHeight: pendingEnter.viewHeight,
-          fromFovDeg,
-          toFovDeg,
-        };
-
-        invalidate();
-      }
-    }
-
-    const blend = projectionBlendRef.current;
-    if (blend) {
-      const perspectiveCamera = controls.camera;
-      if (!isPerspectiveCamera(perspectiveCamera)) {
-        projectionBlendRef.current = null;
-        pendingOrthoEnterRef.current = null;
-        return;
-      }
-
-      const now = performance.now();
-      const t = MathUtils.clamp((now - blend.start) / Math.max(1, blend.duration), 0, 1);
-      const eased = t * t * (3 - 2 * t);
-      const fovDeg = MathUtils.lerp(blend.fromFovDeg, blend.toFovDeg, eased);
-
-      perspectiveCamera.fov = fovDeg;
-      perspectiveCamera.updateProjectionMatrix();
-
-      const distance = MathUtils.clamp(
-        distanceForViewHeight(blend.viewHeight, MathUtils.degToRad(fovDeg)),
-        MIN_DISTANCE,
-        MAX_DISTANCE,
-      );
-      controls.dollyTo(distance, false);
-      controls.update(0);
-      invalidate();
-
-      if (t < 1) return;
-
-      if (blend.kind === "enter-orthographic") {
         const orthographic = orthographicCameraRef.current;
         if (!orthographic) {
-          projectionBlendRef.current = null;
           pendingOrthoEnterRef.current = null;
           return;
         }
@@ -677,7 +607,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
 
         const orthoHeight = orthographic.top - orthographic.bottom;
         const orthoZoom = MathUtils.clamp(
-          orthoHeight / Math.max(1e-6, blend.viewHeight),
+          orthoHeight / Math.max(1e-6, pendingEnter.viewHeight),
           MIN_ORTHO_ZOOM,
           MAX_ORTHO_ZOOM,
         );
@@ -700,51 +630,14 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
         );
         controls.zoomTo(orthoZoom, false);
         controls.update(0);
-      }
 
-      projectionBlendRef.current = null;
-      pendingOrthoEnterRef.current = null;
-      invalidate();
-      return;
+        pendingOrthoEnterRef.current = null;
+        invalidate();
+        return;
+      }
     }
 
     if (projection !== "orthographic") return;
-
-    if (!lock) return;
-
-    if (lock.poleLocked) return;
-
-    const now = performance.now();
-
-    if (lock.rebindDirectionAfterIgnore) {
-      if (controls.active) return;
-
-      controls.getTarget(scratch.target);
-      controls.getPosition(scratch.position);
-      scratch.direction.copy(scratch.position).sub(scratch.target);
-      if (scratch.direction.lengthSq() === 0) return;
-      scratch.direction.normalize();
-
-      lock.direction.copy(scratch.direction);
-      lock.rebindDirectionAfterIgnore = false;
-      lock.ignoreUntil = now + 80;
-      invalidate();
-      return;
-    }
-
-    if (now < lock.ignoreUntil) return;
-
-    controls.getTarget(scratch.target);
-    controls.getPosition(scratch.position);
-    scratch.direction.copy(scratch.position).sub(scratch.target);
-    if (scratch.direction.lengthSq() === 0) return;
-    scratch.direction.normalize();
-
-    const dot = scratch.direction.dot(lock.direction);
-    if (dot >= ORTHO_SWITCH_TOLERANCE_COS) return;
-
-    leaveOrthographicView();
-    invalidate();
   }, -3);
 
   return {
