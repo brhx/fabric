@@ -34,7 +34,7 @@ function App() {
         className="fabric-canvas pointer-events-none absolute inset-0"
       />
 
-      <div className="pointer-events-none relative z-10 flex h-full w-full flex-col gap-2 p-2">
+      <div className="pointer-events-none relative z-10 flex h-full w-full flex-col">
         <header
           data-tauri-drag-region
           data-ui-chrome="true"
