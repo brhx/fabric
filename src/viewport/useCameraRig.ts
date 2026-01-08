@@ -1,6 +1,7 @@
 import type { CameraControlsImpl } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useMemo, useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 import { MathUtils, OrthographicCamera, PerspectiveCamera, Vector3 } from "three";
 import { isOrthographicCamera, isPerspectiveCamera, type Projection } from "../camera";
 import {
@@ -16,13 +17,26 @@ import { DEFAULT_VIEW_ID, getDefaultView, type DefaultViewId } from "./defaultVi
 import { stabilizePoleDirection } from "./poleNudge";
 import { type ViewBasis, type WorldFrame, ZUpFrame } from "./worldFrame";
 
-type OrthoLock = {
+export type OrthoLock = {
   direction: Vector3;
   poleLocked?: boolean;
 };
 
-type PendingOrthoEnter = {
+export type PendingOrthoEnter = {
   viewHeight: number;
+};
+
+export type PerspectiveSnapshot = {
+  position: Vector3;
+  target: Vector3;
+  up: Vector3;
+  fov: number;
+};
+
+export type CameraRigDebugRefs = {
+  orthoLockRef: MutableRefObject<OrthoLock | null>;
+  pendingOrthoEnterRef: MutableRefObject<PendingOrthoEnter | null>;
+  lastPerspectiveRef: MutableRefObject<PerspectiveSnapshot | null>;
 };
 
 export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
@@ -32,12 +46,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
   const controlsRef = useRef<CameraControlsImpl | null>(null);
   const perspectiveCameraRef = useRef<PerspectiveCamera | null>(null);
   const orthographicCameraRef = useRef<OrthographicCamera | null>(null);
-  const lastPerspectiveRef = useRef<{
-    position: Vector3;
-    target: Vector3;
-    up: Vector3;
-    fov: number;
-  } | null>(null);
+  const lastPerspectiveRef = useRef<PerspectiveSnapshot | null>(null);
 
   const [projection, setProjection] = useState<Projection>("perspective");
 
@@ -647,6 +656,11 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     perspectiveCameraRef,
     orthographicCameraRef,
     worldUnitsPerPixelRef,
+    debug: {
+      orthoLockRef,
+      pendingOrthoEnterRef,
+      lastPerspectiveRef,
+    } satisfies CameraRigDebugRefs,
     enterOrthographicView,
     leaveOrthographicView,
     handleRotateAroundUp,

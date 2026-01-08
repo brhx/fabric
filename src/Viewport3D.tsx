@@ -12,6 +12,7 @@ import { GeoRoot } from "./geo/GeoRoot";
 import { useGeoFrame } from "./geo/useGeoFrame";
 import { StableCameraControls } from "./viewport/StableCameraControls";
 import { TrackpadControls } from "./viewport/TrackpadControls";
+import { ViewportDebugOverlay } from "./viewport/ViewportDebugOverlay";
 import {
   AXES_OVERLAY_LENGTH,
   MAX_DISTANCE,
@@ -117,6 +118,18 @@ function Viewport3DContent() {
 
       <MainScene renderOffset={geo.renderOffset} />
       <GeoRoot frame={geo.frame} />
+      <ViewportDebugOverlay
+        controlsRef={rig.controlsRef}
+        projection={rig.projection}
+        worldUnitsPerPixelRef={rig.worldUnitsPerPixelRef}
+        rigDebug={rig.debug}
+        geo={{
+          geodetic: geo.geodetic,
+          originEcef: geo.originEcef,
+          renderOffset: geo.renderOffset,
+          frame: geo.frame,
+        }}
+      />
       <ViewCube
         controls={rig.controlsRef}
         onSelectDirection={rig.enterOrthographicView}
