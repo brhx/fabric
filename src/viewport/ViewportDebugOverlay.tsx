@@ -202,11 +202,14 @@ export function ViewportDebugOverlay(props: {
     lines.push("Viewport Debug  (toggle: D)");
     lines.push("");
     lines.push(
-      `camera: ${isPersp ? "perspective" : isOrtho ? "orthographic" : "unknown"}`,
+      `camera: ${
+        isPersp ? "perspective"
+        : isOrtho ? "orthographic"
+        : "unknown"
+      }`,
     );
     if (isPersp) lines.push(`fov: ${formatNumber(activeCamera.fov, 2)}°`);
-    if (isOrtho)
-      lines.push(`zoom: ${formatNumber(activeCamera.zoom ?? 0, 3)}`);
+    if (isOrtho) lines.push(`zoom: ${formatNumber(activeCamera.zoom ?? 0, 3)}`);
     if (isOrtho) {
       const viewHeight =
         (activeCamera.top - activeCamera.bottom) / activeCamera.zoom;

@@ -3,10 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useMemo, useRef } from "react";
 import { OrthographicCamera, PerspectiveCamera, Vector3 } from "three";
 import { isOrthographicCamera, isPerspectiveCamera } from "../camera";
-import {
-  distanceForViewHeight,
-  viewHeightForPerspective,
-} from "./cameraMath";
+import { distanceForViewHeight, viewHeightForPerspective } from "./cameraMath";
 import { DEFAULT_PERSPECTIVE_FOV_DEG } from "./constants";
 import {
   DEFAULT_VIEW_ID,
@@ -215,13 +212,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       invalidate();
       return true;
     },
-    [
-      applyCameraUp,
-      invalidate,
-      scratch,
-      setActiveCamera,
-      syncOrthoFrustum,
-    ],
+    [applyCameraUp, invalidate, scratch, setActiveCamera, syncOrthoFrustum],
   );
 
   const exitOrthographicView = useCallback(() => {
