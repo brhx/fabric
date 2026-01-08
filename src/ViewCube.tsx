@@ -4,13 +4,24 @@ import {
   Html,
   Hud,
   OrthographicCamera,
+  PerspectiveCamera,
   RoundedBox,
 } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { LuRotateCcw, LuRotateCw } from "react-icons/lu";
-import { CanvasTexture, Group, Matrix4, Mesh, Quaternion, Vector3 } from "three";
+import {
+  CanvasTexture,
+  Group,
+  MathUtils,
+  Matrix4,
+  Mesh,
+  OrthographicCamera as ThreeOrthographicCamera,
+  PerspectiveCamera as ThreePerspectiveCamera,
+  Quaternion,
+  Vector3,
+} from "three";
 
 const VIEWCUBE_MARGIN_RIGHT_PX = 132;
 const VIEWCUBE_MARGIN_TOP_PX = 24;
@@ -182,6 +193,7 @@ function getViewCubeHitFromLocalPoint(localPoint: Vector3): ViewCubeHit {
 
 type ViewCubeProps = {
   controls: RefObject<CameraControlsImpl | null>;
+  projection: "perspective" | "orthographic";
   onSelectDirection?: (worldDirection: [number, number, number]) => void;
   onRotateAroundUp?: (radians: number) => void;
 };
@@ -193,6 +205,8 @@ export function ViewCube(props: ViewCubeProps) {
     VIEWCUBE_MARGIN_TOP_PX + VIEWCUBE_WIDGET_HEIGHT_PX / 2,
   ]);
 
+  const hudPerspectiveCameraRef = useRef<ThreePerspectiveCamera | null>(null);
+  const hudOrthographicCameraRef = useRef<ThreeOrthographicCamera | null>(null);
   const cubeRef = useRef<Mesh | null>(null);
   const orientationRef = useRef<Group | null>(null);
   const dragStateRef = useRef<{
@@ -287,6 +301,27 @@ export function ViewCube(props: ViewCubeProps) {
     const sourceCamera = props.controls.current?.camera ?? camera;
     scratch.matrix.copy(sourceCamera.matrixWorld).invert();
     orientation.quaternion.setFromRotationMatrix(scratch.matrix);
+
+    const wantsPerspective = (sourceCamera as any)?.isPerspectiveCamera === true;
+    if (wantsPerspective) {
+      const hudPerspective = hudPerspectiveCameraRef.current;
+      if (!hudPerspective) return;
+
+      const mainFovDeg = Number((sourceCamera as any)?.fov ?? 45);
+      if (!Number.isFinite(mainFovDeg) || mainFovDeg <= 0) return;
+
+      const fovRad = MathUtils.degToRad(mainFovDeg);
+      const denom = 2 * Math.tan(fovRad / 2);
+      if (!Number.isFinite(denom) || denom === 0) return;
+
+      const distance = size.height / denom;
+      if (!Number.isFinite(distance) || distance <= 0) return;
+
+      hudPerspective.fov = mainFovDeg;
+      hudPerspective.position.set(0, 0, distance);
+      hudPerspective.lookAt(0, 0, 0);
+      hudPerspective.updateProjectionMatrix();
+    }
   });
 
   const moveCameraToWorldDirection = (worldDirection: Vector3) => {
@@ -497,7 +532,26 @@ export function ViewCube(props: ViewCubeProps) {
 
   return (
     <Hud renderPriority={1}>
-      <OrthographicCamera makeDefault position={[0, 0, 200]} />
+      <PerspectiveCamera
+        ref={(node) => {
+          hudPerspectiveCameraRef.current = node;
+        }}
+        makeDefault={props.projection === "perspective"}
+        position={[0, 0, 2000]}
+        fov={45}
+        near={0.1}
+        far={50000}
+      />
+      <OrthographicCamera
+        ref={(node) => {
+          hudOrthographicCameraRef.current = node;
+        }}
+        makeDefault={props.projection === "orthographic"}
+        position={[0, 0, 200]}
+        zoom={1}
+        near={0.1}
+        far={50000}
+      />
 
       <group position={[x, y, 0]}>
         <group ref={orientationRef}>

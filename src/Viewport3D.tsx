@@ -30,6 +30,7 @@ const PROJECTION_MORPH_DURATION_MS = 260;
 const MIN_ORTHO_ZOOM = 0.08;
 const MAX_ORTHO_ZOOM = 240;
 const ORTHO_SWITCH_TOLERANCE_RADIANS = 0.008;
+const ORTHO_SWITCH_TOLERANCE_COS = Math.cos(ORTHO_SWITCH_TOLERANCE_RADIANS);
 const ORTHO_SWITCH_IGNORE_MS = 520;
 
 export function Viewport3D(props: { className?: string }) {
@@ -50,25 +51,19 @@ export function Viewport3D(props: { className?: string }) {
   );
 }
 
-type PendingView = {
-  position: Vector3;
-  target: Vector3;
-  zoom: number | null;
-  enableTransition: boolean;
-};
-
 type OrthoLock = {
   direction: Vector3;
   ignoreUntil: number;
   rebindDirectionAfterIgnore: boolean;
 };
 
-type ProjectionMorph =
+type ProjectionTransition =
   | {
-      kind: "perspectiveToOrthographic";
-      phase: "awaitRest" | "morph";
-      direction: Vector3;
+      kind: "toOrthographic";
+      phase: "awaitControlsIdle" | "morph" | "awaitCameraSwap";
       target: Vector3;
+      direction: Vector3;
+      position: Vector3;
       scale: number;
       startFovDeg: number;
       endFovDeg: number;
@@ -77,10 +72,11 @@ type ProjectionMorph =
       durationMs: number;
     }
   | {
-      kind: "orthographicToPerspective";
-      phase: "awaitSwap" | "morph";
-      direction: Vector3;
+      kind: "toPerspective";
+      phase: "awaitCameraSwap" | "morph";
       target: Vector3;
+      direction: Vector3;
+      position: Vector3;
       scale: number;
       startFovDeg: number;
       endFovDeg: number;
@@ -88,17 +84,21 @@ type ProjectionMorph =
       durationMs: number;
     };
 
+type DefaultViewRequest = {
+  phase: "start" | "awaitIdle" | "awaitOrthoIdle";
+};
+
 function Viewport3DContent() {
-  const { invalidate, size } = useThree();
+  const { gl, invalidate, size } = useThree();
   const controlsRef = useRef<CameraControlsImpl | null>(null);
   const perspectiveCameraRef = useRef<ThreePerspectiveCamera | null>(null);
   const orthographicCameraRef = useRef<ThreeOrthographicCamera | null>(null);
 
   const [projection, setProjection] = useState<"perspective" | "orthographic">("perspective");
 
-  const pendingViewRef = useRef<PendingView | null>(null);
   const orthoLockRef = useRef<OrthoLock | null>(null);
-  const projectionMorphRef = useRef<ProjectionMorph | null>(null);
+  const projectionTransitionRef = useRef<ProjectionTransition | null>(null);
+  const defaultViewRequestRef = useRef<DefaultViewRequest | null>(null);
   const initializedRef = useRef(false);
   const lastControlsInstanceRef = useRef<CameraControlsImpl | null>(null);
 
@@ -113,33 +113,56 @@ function Viewport3DContent() {
   );
 
   useEffect(() => {
-    if (projection !== "orthographic") return;
+    const element = gl.domElement;
+    const doc = element.ownerDocument;
+    const view = doc.defaultView;
+    if (!view) return;
 
-    const perspective = perspectiveCameraRef.current;
-    if (!perspective) return;
+    const isEditableTarget = (eventTarget: EventTarget | null) => {
+      if (!(eventTarget instanceof Element)) return false;
+      const editable = eventTarget.closest?.(
+        'input,textarea,select,[contenteditable="true"],[contenteditable=""]',
+      );
+      return Boolean(editable);
+    };
 
-    if (perspective.fov !== DEFAULT_PERSPECTIVE_FOV_DEG) {
-      perspective.fov = DEFAULT_PERSPECTIVE_FOV_DEG;
-      perspective.updateProjectionMatrix();
-    }
-  }, [projection]);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      if (event.key !== "1" && event.code !== "Digit1") return;
+      if (isEditableTarget(event.target)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      defaultViewRequestRef.current = { phase: "start" };
+      invalidate();
+    };
+
+    view.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => {
+      view.removeEventListener("keydown", onKeyDown as any, true as any);
+    };
+  }, [gl, invalidate]);
 
   useFrame(() => {
-    const morph = projectionMorphRef.current;
-    if (!morph) return;
+    const transition = projectionTransitionRef.current;
+    if (!transition) return;
 
     const controls = controlsRef.current;
     if (!controls) return;
 
     invalidate();
 
-    if (morph.kind === "perspectiveToOrthographic") {
-      if (projection !== "perspective") {
-        projectionMorphRef.current = null;
-        return;
-      }
+    const isPerspective = (controls.camera as any)?.isPerspectiveCamera === true;
+    const isOrthographic = (controls.camera as any)?.isOrthographicCamera === true;
 
-      if (morph.phase === "awaitRest") {
+    const ease = (value: number) =>
+      value < 0.5 ? 4 * value * value * value : 1 - Math.pow(-2 * value + 2, 3) / 2;
+
+    if (transition.kind === "toOrthographic") {
+      if (transition.phase === "awaitControlsIdle") {
+        if (projection !== "perspective") return;
+        if (!isPerspective) return;
         if (controls.active) return;
 
         controls.getTarget(scratch.target);
@@ -155,137 +178,168 @@ function Viewport3DContent() {
         const startFovDeg = perspective?.fov ?? DEFAULT_PERSPECTIVE_FOV_DEG;
         const startFovRad = MathUtils.degToRad(startFovDeg);
 
-        morph.target.copy(scratch.target);
-        morph.direction.copy(scratch.direction);
-        morph.startFovDeg = startFovDeg;
-        morph.scale = 2 * radius * Math.tan(startFovRad / 2);
-        morph.orthoZoom = size.height / morph.scale;
+        transition.target.copy(scratch.target);
+        transition.direction.copy(scratch.direction);
+        transition.startFovDeg = startFovDeg;
+        transition.scale = 2 * radius * Math.tan(startFovRad / 2);
 
-        const distanceLimitedFovRad = 2 * Math.atan(morph.scale / (2 * MAX_DISTANCE));
+        transition.orthoZoom = MathUtils.clamp(
+          size.height / transition.scale,
+          MIN_ORTHO_ZOOM,
+          MAX_ORTHO_ZOOM,
+        );
+
+        const distanceLimitedFovRad = 2 * Math.atan(transition.scale / (2 * MAX_DISTANCE));
         const distanceLimitedFovDeg = MathUtils.radToDeg(distanceLimitedFovRad);
-        morph.endFovDeg = Math.min(startFovDeg, Math.max(MORPH_FOV_MIN_DEG, distanceLimitedFovDeg));
+        transition.endFovDeg = Math.min(
+          startFovDeg,
+          Math.max(MORPH_FOV_MIN_DEG, distanceLimitedFovDeg),
+        );
 
-        morph.startTime = performance.now();
-        morph.phase = "morph";
+        transition.startTime = performance.now();
+        transition.phase = "morph";
         return;
       }
 
-      const now = performance.now();
-      const raw = (now - morph.startTime) / morph.durationMs;
-      const t = MathUtils.clamp(raw, 0, 1);
-      const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      if (transition.phase === "morph") {
+        if (projection !== "perspective") {
+          projectionTransitionRef.current = null;
+          return;
+        }
+        if (!isPerspective) return;
 
-      const nextFovDeg = MathUtils.lerp(morph.startFovDeg, morph.endFovDeg, eased);
-      const nextFovRad = MathUtils.degToRad(nextFovDeg);
-      const nextDistance = morph.scale / (2 * Math.tan(nextFovRad / 2));
+        const now = performance.now();
+        const raw = (now - transition.startTime) / transition.durationMs;
+        const t = MathUtils.clamp(raw, 0, 1);
+        const eased = ease(t);
+
+        const nextFovDeg = MathUtils.lerp(transition.startFovDeg, transition.endFovDeg, eased);
+        const nextFovRad = MathUtils.degToRad(nextFovDeg);
+        const nextDistance = transition.scale / (2 * Math.tan(nextFovRad / 2));
+
+        const perspective = perspectiveCameraRef.current;
+        if (perspective) {
+          perspective.fov = nextFovDeg;
+          perspective.updateProjectionMatrix();
+        }
+
+        scratch.nextPosition.copy(transition.target).addScaledVector(transition.direction, nextDistance);
+
+        controls.setLookAt(
+          scratch.nextPosition.x,
+          scratch.nextPosition.y,
+          scratch.nextPosition.z,
+          transition.target.x,
+          transition.target.y,
+          transition.target.z,
+          false,
+        );
+        controls.update(0);
+
+        if (t < 1) return;
+
+        const orthographic = orthographicCameraRef.current;
+        if (orthographic) {
+          orthographic.position.copy(scratch.nextPosition);
+          orthographic.lookAt(transition.target);
+          orthographic.zoom = transition.orthoZoom;
+          orthographic.updateProjectionMatrix();
+        }
+
+        transition.position.copy(scratch.nextPosition);
+        transition.phase = "awaitCameraSwap";
+        setProjection("orthographic");
+        invalidate();
+        return;
+      }
+
+      if (projection !== "orthographic") return;
+      if (!isOrthographic) return;
+      if (controls.active) return;
+
+      controls.setLookAt(
+        transition.position.x,
+        transition.position.y,
+        transition.position.z,
+        transition.target.x,
+        transition.target.y,
+        transition.target.z,
+        false,
+      );
+      controls.zoomTo(transition.orthoZoom, false);
+      controls.update(0);
 
       const perspective = perspectiveCameraRef.current;
       if (perspective) {
-        perspective.fov = nextFovDeg;
+        perspective.fov = DEFAULT_PERSPECTIVE_FOV_DEG;
         perspective.updateProjectionMatrix();
       }
 
-      scratch.nextPosition.copy(morph.target).addScaledVector(morph.direction, nextDistance);
-
-      controls.setLookAt(
-        scratch.nextPosition.x,
-        scratch.nextPosition.y,
-        scratch.nextPosition.z,
-        morph.target.x,
-        morph.target.y,
-        morph.target.z,
-        false,
-      );
-      controls.update(0);
-
-      if (t < 1) return;
-
-      const orthographic = orthographicCameraRef.current;
-      if (orthographic) {
-        orthographic.position.copy(scratch.nextPosition);
-        orthographic.lookAt(morph.target);
-        orthographic.zoom = morph.orthoZoom;
-        orthographic.updateProjectionMatrix();
-      }
-
-      pendingViewRef.current = {
-        position: scratch.nextPosition.clone(),
-        target: morph.target.clone(),
-        zoom: morph.orthoZoom,
-        enableTransition: false,
-      };
-
-      projectionMorphRef.current = null;
-      setProjection("orthographic");
+      projectionTransitionRef.current = null;
       invalidate();
       return;
     }
 
-    const perspective = perspectiveCameraRef.current;
-    if (!perspective) return;
+    if (transition.phase === "awaitCameraSwap") {
+      if (projection !== "perspective") return;
+      if (!isPerspective) return;
+      if (controls.active) return;
+
+      controls.setLookAt(
+        transition.position.x,
+        transition.position.y,
+        transition.position.z,
+        transition.target.x,
+        transition.target.y,
+        transition.target.z,
+        false,
+      );
+      controls.update(0);
+
+      transition.startTime = performance.now();
+      transition.phase = "morph";
+      return;
+    }
 
     if (projection !== "perspective") {
       invalidate();
       return;
     }
-
-    if (morph.phase === "awaitSwap") {
-      if ((controls.camera as any)?.isPerspectiveCamera !== true) return;
-      if (pendingViewRef.current !== null) return;
-      if (controls.active) return;
-
-      controls.getTarget(scratch.target);
-      controls.getPosition(scratch.position);
-      scratch.direction.copy(scratch.position).sub(scratch.target);
-      if (scratch.direction.lengthSq() === 0) return;
-      scratch.direction.normalize();
-
-      const radius = scratch.position.distanceTo(scratch.target);
-      if (!Number.isFinite(radius) || radius <= 0) return;
-
-      const startFovDeg = perspective.fov;
-      const startFovRad = MathUtils.degToRad(startFovDeg);
-
-      morph.target.copy(scratch.target);
-      morph.direction.copy(scratch.direction);
-      morph.startFovDeg = startFovDeg;
-      morph.scale = 2 * radius * Math.tan(startFovRad / 2);
-      morph.startTime = performance.now();
-      morph.phase = "morph";
-      return;
-    }
+    if (!isPerspective) return;
 
     const now = performance.now();
-    const raw = (now - morph.startTime) / morph.durationMs;
+    const raw = (now - transition.startTime) / transition.durationMs;
     const t = MathUtils.clamp(raw, 0, 1);
-    const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const eased = ease(t);
 
-    const nextFovDeg = MathUtils.lerp(morph.startFovDeg, morph.endFovDeg, eased);
+    const nextFovDeg = MathUtils.lerp(transition.startFovDeg, transition.endFovDeg, eased);
     const nextFovRad = MathUtils.degToRad(nextFovDeg);
-    const nextDistance = morph.scale / (2 * Math.tan(nextFovRad / 2));
+    const nextDistance = transition.scale / (2 * Math.tan(nextFovRad / 2));
 
+    const perspective = perspectiveCameraRef.current;
     if (perspective) {
       perspective.fov = nextFovDeg;
       perspective.updateProjectionMatrix();
     }
 
-    scratch.nextPosition.copy(morph.target).addScaledVector(morph.direction, nextDistance);
+    scratch.nextPosition.copy(transition.target).addScaledVector(transition.direction, nextDistance);
 
     controls.setLookAt(
       scratch.nextPosition.x,
       scratch.nextPosition.y,
       scratch.nextPosition.z,
-      morph.target.x,
-      morph.target.y,
-      morph.target.z,
+      transition.target.x,
+      transition.target.y,
+      transition.target.z,
       false,
     );
     controls.update(0);
 
     if (t < 1) return;
-    projectionMorphRef.current = null;
+
+    projectionTransitionRef.current = null;
     if (perspective) {
-      perspective.fov = morph.endFovDeg;
+      perspective.fov = transition.endFovDeg;
       perspective.updateProjectionMatrix();
     }
     invalidate();
@@ -300,35 +354,84 @@ function Viewport3DContent() {
       controls.updateCameraUp();
     }
 
-    const pending = pendingViewRef.current;
-    if (pending) {
-      const wantsOrthographic = pending.zoom !== null;
-      const isOrthographic = (controls.camera as any)?.isOrthographicCamera === true;
+    const defaultRequest = defaultViewRequestRef.current;
+    if (defaultRequest) {
+      invalidate();
 
-      if (wantsOrthographic !== isOrthographic) {
-        invalidate();
+      const defaultTarget: [number, number, number] = [0, 0, 0];
+      const defaultPosition: [number, number, number] = [10, -10, 10];
+
+      scratch.target.set(...defaultTarget);
+      scratch.position.set(...defaultPosition);
+
+      const defaultRadius = scratch.position.distanceTo(scratch.target);
+      const defaultFovRad = MathUtils.degToRad(DEFAULT_PERSPECTIVE_FOV_DEG);
+      const defaultScale = 2 * defaultRadius * Math.tan(defaultFovRad / 2);
+      const defaultOrthoZoom = MathUtils.clamp(
+        size.height / defaultScale,
+        MIN_ORTHO_ZOOM,
+        MAX_ORTHO_ZOOM,
+      );
+
+      const isOrthoCamera = (controls.camera as any)?.isOrthographicCamera === true;
+
+      if (defaultRequest.phase === "start") {
+        cancelProjectionTransition({ cancelControlsTransition: true });
+        orthoLockRef.current = null;
+
+        const perspective = perspectiveCameraRef.current;
+        if (perspective) {
+          perspective.fov = DEFAULT_PERSPECTIVE_FOV_DEG;
+          perspective.updateProjectionMatrix();
+        }
+
+        if (isOrthoCamera) {
+          controls.setLookAt(
+            defaultPosition[0],
+            defaultPosition[1],
+            defaultPosition[2],
+            defaultTarget[0],
+            defaultTarget[1],
+            defaultTarget[2],
+            true,
+          );
+          controls.zoomTo(defaultOrthoZoom, true);
+          controls.update(0);
+
+          defaultViewRequestRef.current = { phase: "awaitOrthoIdle" };
+          return;
+        }
+
+        if (projection !== "perspective") setProjection("perspective");
+
+        controls.setLookAt(
+          defaultPosition[0],
+          defaultPosition[1],
+          defaultPosition[2],
+          defaultTarget[0],
+          defaultTarget[1],
+          defaultTarget[2],
+          true,
+        );
+        controls.update(0);
+        defaultViewRequestRef.current = { phase: "awaitIdle" };
         return;
       }
 
-      pendingViewRef.current = null;
+      if (controls.active) return;
 
-      controls.setLookAt(
-        pending.position.x,
-        pending.position.y,
-        pending.position.z,
-        pending.target.x,
-        pending.target.y,
-        pending.target.z,
-        pending.enableTransition,
-      );
-
-      if (isOrthographic && pending.zoom !== null) {
-        controls.zoomTo(pending.zoom, pending.enableTransition);
+      if (defaultRequest.phase === "awaitIdle") {
+        defaultViewRequestRef.current = null;
+        return;
       }
 
-      controls.update(0);
-      invalidate();
+      if (!isOrthoCamera) {
+        defaultViewRequestRef.current = null;
+        return;
+      }
 
+      leaveOrthographicView();
+      defaultViewRequestRef.current = null;
       return;
     }
 
@@ -340,11 +443,35 @@ function Viewport3DContent() {
     }
   }, -2);
 
+  function cancelProjectionTransition(options?: { cancelControlsTransition?: boolean }) {
+    const shouldCancelControls = Boolean(options?.cancelControlsTransition);
+    projectionTransitionRef.current = null;
+
+    if (!shouldCancelControls) return;
+
+    const controls = controlsRef.current;
+    if (!controls || !controls.active) return;
+
+    controls.getTarget(scratch.target);
+    controls.getPosition(scratch.position);
+
+    controls.setLookAt(
+      scratch.position.x,
+      scratch.position.y,
+      scratch.position.z,
+      scratch.target.x,
+      scratch.target.y,
+      scratch.target.z,
+      false,
+    );
+    controls.update(0);
+  }
+
   const enterOrthographicView = (worldDirection: [number, number, number]) => {
     const controls = controlsRef.current;
     if (!controls) return;
 
-    projectionMorphRef.current = null;
+    cancelProjectionTransition({ cancelControlsTransition: true });
 
     controls.getTarget(scratch.target);
     controls.getPosition(scratch.position);
@@ -394,20 +521,16 @@ function Viewport3DContent() {
     );
     controls.update(0);
 
-    const perspective = perspectiveCameraRef.current;
-    const startFovDeg = perspective?.fov ?? DEFAULT_PERSPECTIVE_FOV_DEG;
-    const startFovRad = MathUtils.degToRad(startFovDeg);
-    const scale = 2 * radius * Math.tan(startFovRad / 2);
-
-    projectionMorphRef.current = {
-      kind: "perspectiveToOrthographic",
-      phase: "awaitRest",
-      direction: scratch.direction.clone(),
+    projectionTransitionRef.current = {
+      kind: "toOrthographic",
+      phase: "awaitControlsIdle",
       target: scratch.target.clone(),
-      scale,
-      startFovDeg,
-      endFovDeg: MORPH_FOV_MIN_DEG,
-      orthoZoom: size.height / scale,
+      direction: scratch.direction.clone(),
+      position: scratch.nextPosition.clone(),
+      scale: 0,
+      startFovDeg: DEFAULT_PERSPECTIVE_FOV_DEG,
+      endFovDeg: DEFAULT_PERSPECTIVE_FOV_DEG,
+      orthoZoom: 1,
       startTime: 0,
       durationMs: PROJECTION_MORPH_DURATION_MS,
     };
@@ -423,9 +546,9 @@ function Viewport3DContent() {
     lock.rebindDirectionAfterIgnore = true;
   };
 
-  const leaveOrthographicView = () => {
+  function leaveOrthographicView() {
     if (projection !== "orthographic") return;
-    if (projectionMorphRef.current) return;
+    if (projectionTransitionRef.current) return;
 
     const controls = controlsRef.current;
     if (!controls) return;
@@ -456,18 +579,12 @@ function Viewport3DContent() {
       perspective.updateProjectionMatrix();
     }
 
-    pendingViewRef.current = {
-      position: scratch.nextPosition.clone(),
+    projectionTransitionRef.current = {
+      kind: "toPerspective",
+      phase: "awaitCameraSwap",
       target: scratch.target.clone(),
-      zoom: null,
-      enableTransition: false,
-    };
-
-    projectionMorphRef.current = {
-      kind: "orthographicToPerspective",
-      phase: "awaitSwap",
       direction: scratch.direction.clone(),
-      target: scratch.target.clone(),
+      position: scratch.nextPosition.clone(),
       scale,
       startFovDeg,
       endFovDeg: DEFAULT_PERSPECTIVE_FOV_DEG,
@@ -478,7 +595,7 @@ function Viewport3DContent() {
     orthoLockRef.current = null;
     setProjection("perspective");
     invalidate();
-  };
+  }
 
   return (
     <>
@@ -531,12 +648,13 @@ function Viewport3DContent() {
         controlsRef={controlsRef}
         orthoLockRef={orthoLockRef}
         onLeaveOrthographic={leaveOrthographicView}
-        isTransitioning={() => projectionMorphRef.current !== null}
+        isTransitioning={() => projectionTransitionRef.current !== null}
       />
 
       <MainScene />
       <ViewCube
         controls={controlsRef}
+        projection={projection}
         onSelectDirection={enterOrthographicView}
         onRotateAroundUp={handleRotateAroundUp}
       />
@@ -598,8 +716,8 @@ function OrthoProjectionManager(props: {
     if (scratch.direction.lengthSq() === 0) return;
     scratch.direction.normalize();
 
-    const angle = scratch.direction.angleTo(lock.direction);
-    if (angle <= ORTHO_SWITCH_TOLERANCE_RADIANS) return;
+    const dot = scratch.direction.dot(lock.direction);
+    if (dot >= ORTHO_SWITCH_TOLERANCE_COS) return;
 
     props.onLeaveOrthographic();
     invalidate();
