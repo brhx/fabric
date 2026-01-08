@@ -10,6 +10,7 @@ export function TrackpadControls(props: {
   controlsRef: RefObject<CameraControlsImpl | null>;
   worldFrame: WorldFrame;
   rotateSpeed: number;
+  panSpeed: number;
   minDistance: number;
   maxDistance: number;
   minOrthoZoom: number;
@@ -146,8 +147,8 @@ export function TrackpadControls(props: {
         distanceScale = (2 * targetDistance * Math.tan(fovInRadians / 2)) / viewportHeight;
       }
 
-      const panX = deltaX * distanceScale;
-      const panY = deltaY * distanceScale;
+      const panX = deltaX * distanceScale * props.panSpeed;
+      const panY = deltaY * distanceScale * props.panSpeed;
 
       controls.truck(panX, panY, false);
       invalidate();
@@ -342,6 +343,7 @@ export function TrackpadControls(props: {
     props.maxOrthoZoom,
     props.minDistance,
     props.minOrthoZoom,
+    props.panSpeed,
     props.rotateSpeed,
     props.worldFrame,
     scene,

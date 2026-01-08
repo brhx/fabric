@@ -15,6 +15,7 @@ import {
   MAX_ORTHO_ZOOM,
   MIN_DISTANCE,
   MIN_ORTHO_ZOOM,
+  PAN_SPEED,
   ROTATE_SPEED,
 } from "./viewport/constants";
 import { useCameraRig } from "./viewport/useCameraRig";
@@ -101,6 +102,7 @@ function Viewport3DContent() {
         controlsRef={rig.controlsRef}
         worldFrame={rig.worldFrame}
         rotateSpeed={ROTATE_SPEED}
+        panSpeed={PAN_SPEED}
         minDistance={MIN_DISTANCE}
         maxDistance={MAX_DISTANCE}
         minOrthoZoom={MIN_ORTHO_ZOOM}
