@@ -24,36 +24,46 @@ import {
   Vector3,
 } from "three";
 
+const VIEWCUBE_SCALE = 0.75;
+
 const VIEWCUBE_MARGIN_RIGHT_PX = 52;
 const VIEWCUBE_MARGIN_TOP_PX = 24;
 
 const VIEWCUBE_DRAG_ROTATE_SPEED = 0.0042;
 const VIEWCUBE_DRAG_THRESHOLD_PX = 3;
 
-const VIEWCUBE_CUBE_SIZE_PX = 42;
-const VIEWCUBE_CUBE_RADIUS_PX = 4.4;
-const VIEWCUBE_CUBE_LABEL_OFFSET_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 0.8;
-const VIEWCUBE_HIT_BAND_PX = 8;
+const VIEWCUBE_CUBE_SIZE_PX = 42 * VIEWCUBE_SCALE;
+const VIEWCUBE_CUBE_RADIUS_PX = 4.4 * VIEWCUBE_SCALE;
+const VIEWCUBE_CUBE_LABEL_OFFSET_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 0.8 * VIEWCUBE_SCALE;
+const VIEWCUBE_HIT_BAND_PX = 8 * VIEWCUBE_SCALE;
 const VIEWCUBE_HOVER_COLOR = "#3b82f6";
 const VIEWCUBE_HOVER_OPACITY = 0.86;
+const VIEWCUBE_HOVER_BEVEL_MIN_PX = 3 * VIEWCUBE_SCALE;
+const VIEWCUBE_HOVER_FACE_OFFSET_PX = 0.32 * VIEWCUBE_SCALE;
+const VIEWCUBE_HOVER_EDGE_OFFSET_PX = 0.2 * VIEWCUBE_SCALE;
 
 const VIEWCUBE_AXIS_SCALE = 0.62;
-const VIEWCUBE_AXIS_LENGTH_PX = 36;
-const VIEWCUBE_AXIS_RADIUS_PX = 1.0;
-const VIEWCUBE_AXIS_CORNER_GAP_PX = 3.6;
+const VIEWCUBE_AXIS_LENGTH_PX = 36 * VIEWCUBE_SCALE;
+const VIEWCUBE_AXIS_RADIUS_PX = 1.0 * VIEWCUBE_SCALE;
+const VIEWCUBE_AXIS_CORNER_GAP_PX = 3.6 * VIEWCUBE_SCALE;
+const VIEWCUBE_AXIS_SPHERE_RADIUS_PX = 2.2 * VIEWCUBE_SCALE;
+const VIEWCUBE_AXIS_LABEL_OFFSET_PX = 10 * VIEWCUBE_SCALE;
+const VIEWCUBE_AXIS_LABEL_SCALE = 20 * VIEWCUBE_SCALE;
 
-const VIEWCUBE_BUTTON_SIZE_PX = 26;
-const VIEWCUBE_BUTTON_OFFSET_X_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 25;
-const VIEWCUBE_BUTTON_OFFSET_Y_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 20;
+const VIEWCUBE_BUTTON_SIZE_PX = 26 * VIEWCUBE_SCALE;
+const VIEWCUBE_BUTTON_OFFSET_X_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 25 * VIEWCUBE_SCALE;
+const VIEWCUBE_BUTTON_OFFSET_Y_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 20 * VIEWCUBE_SCALE;
+const VIEWCUBE_BUTTON_ICON_SIZE_PX = 18 * VIEWCUBE_SCALE;
 
 const VIEWCUBE_CONTENT_ROTATION: [number, number, number] = [Math.PI / 2, 0, 0];
 const VIEWCUBE_PERSPECTIVE_DISTANCE_SCALE = 0.7;
+const VIEWCUBE_WIDGET_GAP_PX = 16 * VIEWCUBE_SCALE;
 
 const VIEWCUBE_WIDGET_WIDTH_PX = VIEWCUBE_BUTTON_OFFSET_X_PX * 2 + VIEWCUBE_BUTTON_SIZE_PX;
 const VIEWCUBE_WIDGET_HEIGHT_PX =
   VIEWCUBE_BUTTON_OFFSET_Y_PX +
   VIEWCUBE_BUTTON_SIZE_PX / 2 +
-  (VIEWCUBE_CUBE_SIZE_PX / 2 + 16) +
+  (VIEWCUBE_CUBE_SIZE_PX / 2 + VIEWCUBE_WIDGET_GAP_PX) +
   (VIEWCUBE_AXIS_LENGTH_PX * VIEWCUBE_AXIS_SCALE) / 2;
 
 const COLOR_AXIS_X = "#e15a5a";
@@ -698,19 +708,19 @@ export function ViewCube(props: ViewCubeProps) {
               />
 
               <mesh raycast={() => null}>
-                <sphereGeometry args={[2.2, 16, 16]} />
+                <sphereGeometry args={[VIEWCUBE_AXIS_SPHERE_RADIUS_PX, 16, 16]} />
                 <meshBasicMaterial color={COLOR_AXIS_Y} />
               </mesh>
 
               <AxisLabel
                 texture={axisLabelTextures.z}
-                position={[0, VIEWCUBE_AXIS_LENGTH_PX + 10, 0]}
-                scale={20}
+                position={[0, VIEWCUBE_AXIS_LENGTH_PX + VIEWCUBE_AXIS_LABEL_OFFSET_PX, 0]}
+                scale={VIEWCUBE_AXIS_LABEL_SCALE}
               />
               <AxisLabel
                 texture={axisLabelTextures.x}
-                position={[VIEWCUBE_AXIS_LENGTH_PX + 10, 0, 0]}
-                scale={20}
+                position={[VIEWCUBE_AXIS_LENGTH_PX + VIEWCUBE_AXIS_LABEL_OFFSET_PX, 0, 0]}
+                scale={VIEWCUBE_AXIS_LABEL_SCALE}
               />
             </group>
           </group>
@@ -730,7 +740,7 @@ export function ViewCube(props: ViewCubeProps) {
               props.onRotateAroundUp?.(Math.PI / 2);
             }}
           >
-            <LuRotateCcw size={18} />
+            <LuRotateCcw size={VIEWCUBE_BUTTON_ICON_SIZE_PX} />
           </ViewCubeButton>
         </Html>
 
@@ -748,7 +758,7 @@ export function ViewCube(props: ViewCubeProps) {
               props.onRotateAroundUp?.(-Math.PI / 2);
             }}
           >
-            <LuRotateCw size={18} />
+            <LuRotateCw size={VIEWCUBE_BUTTON_ICON_SIZE_PX} />
           </ViewCubeButton>
         </Html>
       </group>
@@ -776,7 +786,10 @@ function ViewCubeHoverHighlight(props: { hit: ViewCubeHit | null }) {
 
   const [lx, ly, lz] = hit.localDirection;
   const half = VIEWCUBE_CUBE_SIZE_PX / 2;
-  const bevel = Math.max(3, Math.min(VIEWCUBE_HIT_BAND_PX, half * 0.5));
+  const bevel = Math.max(
+    VIEWCUBE_HOVER_BEVEL_MIN_PX,
+    Math.min(VIEWCUBE_HIT_BAND_PX, half * 0.5),
+  );
 
   const materialProps = {
     color: VIEWCUBE_HOVER_COLOR,
@@ -794,7 +807,7 @@ function ViewCubeHoverHighlight(props: { hit: ViewCubeHit | null }) {
     const normal = new Vector3(lx, ly, lz).normalize();
     const position = normal
       .clone()
-      .multiplyScalar(half + 0.32)
+      .multiplyScalar(half + VIEWCUBE_HOVER_FACE_OFFSET_PX)
       .toArray() as [number, number, number];
     return (
       <mesh
@@ -811,7 +824,7 @@ function ViewCubeHoverHighlight(props: { hit: ViewCubeHit | null }) {
 
   if (hit.kind === "edge") {
     const thickness = bevel * 0.72;
-    const edgeOffset = half - thickness / 2 + 0.2;
+    const edgeOffset = half - thickness / 2 + VIEWCUBE_HOVER_EDGE_OFFSET_PX;
 
     const alongX = lx === 0;
     const alongY = ly === 0;
@@ -840,7 +853,7 @@ function ViewCubeHoverHighlight(props: { hit: ViewCubeHit | null }) {
   }
 
   const cornerSize = bevel * 0.92;
-  const cornerOffset = half - cornerSize / 2 + 0.2;
+  const cornerOffset = half - cornerSize / 2 + VIEWCUBE_HOVER_EDGE_OFFSET_PX;
   const position: [number, number, number] = [lx * cornerOffset, ly * cornerOffset, lz * cornerOffset];
 
   return (
