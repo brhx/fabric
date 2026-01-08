@@ -4,7 +4,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import type { MutableRefObject, RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Vector3 } from "three";
-import { isPerspectiveCamera } from "../camera";
+import { isOrthographicCamera, isPerspectiveCamera } from "../camera";
 import type { LocalEnuFrame } from "../geo/localFrame";
 import type { Geodetic } from "../geo/wgs84";
 import {
@@ -179,6 +179,7 @@ export function ViewportDebugOverlay(props: {
     const controls = props.controlsRef.current;
     const activeCamera = controls?.camera ?? fallbackCamera;
     const isPersp = isPerspectiveCamera(activeCamera);
+    const isOrtho = isOrthographicCamera(activeCamera);
 
     if (controls) {
       controls.getPosition(scratch.position);
@@ -200,8 +201,17 @@ export function ViewportDebugOverlay(props: {
     const lines: string[] = [];
     lines.push("Viewport Debug  (toggle: D)");
     lines.push("");
-    lines.push(`camera: ${isPersp ? "perspective" : "unknown"}`);
+    lines.push(
+      `camera: ${isPersp ? "perspective" : isOrtho ? "orthographic" : "unknown"}`,
+    );
     if (isPersp) lines.push(`fov: ${formatNumber(activeCamera.fov, 2)}°`);
+    if (isOrtho)
+      lines.push(`zoom: ${formatNumber(activeCamera.zoom ?? 0, 3)}`);
+    if (isOrtho) {
+      const viewHeight =
+        (activeCamera.top - activeCamera.bottom) / activeCamera.zoom;
+      lines.push(`viewHeight: ${formatNumber(viewHeight, 3)}`);
+    }
     lines.push(`pos: ${formatVec3(scratch.position, 3)}`);
     lines.push(`tgt: ${formatVec3(scratch.target, 3)}`);
     lines.push(`up:  ${formatVec3(scratch.up, 3)}`);

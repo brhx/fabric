@@ -1,5 +1,6 @@
 import {
   CameraControlsImpl,
+  OrthographicCamera as DreiOrthographicCamera,
   PerspectiveCamera as DreiPerspectiveCamera,
 } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
@@ -90,6 +91,13 @@ function Viewport3DContent() {
         near={0.1}
         far={50000}
       />
+      <DreiOrthographicCamera
+        ref={rig.orthographicCameraRef}
+        up={[0, 0, 1]}
+        near={0.1}
+        far={50000}
+        position={[0, 0, 10]}
+      />
 
       <StableCameraControls
         ref={rig.controlsRef}
@@ -118,6 +126,7 @@ function Viewport3DContent() {
         panSpeed={PAN_SPEED}
         minDistance={MIN_DISTANCE}
         maxDistance={MAX_DISTANCE}
+        onOrbitInput={rig.handleOrbitInput}
         onRenderPan={geo.translateRender}
       />
 
@@ -135,6 +144,9 @@ function Viewport3DContent() {
       />
       <ViewCube
         controls={rig.controlsRef}
+        onSelectDirection={rig.enterOrthographicView}
+        onOrbitInput={rig.handleOrbitInput}
+        onRotateAroundUp={rig.handleRotateAroundUp}
         getWorldDirectionFromLocalDirection={
           rig.getWorldDirectionFromLocalDirection
         }

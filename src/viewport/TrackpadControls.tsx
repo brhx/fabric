@@ -3,7 +3,9 @@ import { useThree } from "@react-three/fiber";
 import type { RefObject } from "react";
 import { useEffect, useMemo, useRef } from "react";
 import { MathUtils, Object3D, Plane, Raycaster, Vector2, Vector3 } from "three";
-import { isPerspectiveCamera } from "../camera";
+import { isOrthographicCamera, isPerspectiveCamera } from "../camera";
+import { viewHeightForPerspective } from "./cameraMath";
+import { DEFAULT_PERSPECTIVE_FOV_DEG } from "./constants";
 import type { WorldFrame } from "./worldFrame";
 
 export function TrackpadControls(props: {
@@ -171,18 +173,26 @@ export function TrackpadControls(props: {
 
       const viewportHeight = Math.max(1, element.clientHeight);
 
-      let distanceScale = 0;
       const activeCamera = getActiveCamera();
-      if (!isPerspectiveCamera(activeCamera)) return;
-      controls.getTarget(scratch.tmpTarget);
-      controls.getPosition(scratch.tmpPosition);
+      let distanceScale = 0;
+      if (isPerspectiveCamera(activeCamera)) {
+        controls.getTarget(scratch.tmpTarget);
+        controls.getPosition(scratch.tmpPosition);
 
-      const targetDistance = scratch.tmpPosition.distanceTo(scratch.tmpTarget);
-      if (!Number.isFinite(targetDistance) || targetDistance <= 0) return;
+        const targetDistance = scratch.tmpPosition.distanceTo(scratch.tmpTarget);
+        if (!Number.isFinite(targetDistance) || targetDistance <= 0) return;
 
-      const fovInRadians = (activeCamera.fov * Math.PI) / 180;
-      distanceScale =
-        (2 * targetDistance * Math.tan(fovInRadians / 2)) / viewportHeight;
+        const fovInRadians = (activeCamera.fov * Math.PI) / 180;
+        distanceScale =
+          (2 * targetDistance * Math.tan(fovInRadians / 2)) / viewportHeight;
+      } else if (isOrthographicCamera(activeCamera)) {
+        const viewHeight =
+          (activeCamera.top - activeCamera.bottom) / activeCamera.zoom;
+        if (!Number.isFinite(viewHeight) || viewHeight <= 0) return;
+        distanceScale = viewHeight / viewportHeight;
+      } else {
+        return;
+      }
 
       const panX = deltaX * distanceScale * props.panSpeed;
       const panY = deltaY * distanceScale * props.panSpeed;
@@ -232,9 +242,81 @@ export function TrackpadControls(props: {
       controls.getTarget(scratch.tmpTarget);
       controls.getPosition(scratch.tmpPosition);
 
+      const activeCamera = getActiveCamera();
+      if (isOrthographicCamera(activeCamera)) {
+        activeCamera.getWorldDirection(scratch.tmpViewNormal).normalize();
+        scratch.viewPlane.setFromNormalAndCoplanarPoint(
+          scratch.tmpViewNormal,
+          scratch.tmpTarget,
+        );
+
+        scratch.raycaster.setFromCamera(scratch.pointer, activeCamera);
+        const hitBefore = scratch.raycaster.ray.intersectPlane(
+          scratch.viewPlane,
+          scratch.tmpZoomBefore,
+        );
+
+        const orthoHeight = activeCamera.top - activeCamera.bottom;
+        if (!Number.isFinite(orthoHeight) || orthoHeight === 0) return;
+        const currentViewHeight = orthoHeight / activeCamera.zoom;
+        if (!Number.isFinite(currentViewHeight) || currentViewHeight <= 0)
+          return;
+
+        const zoomFactor = Math.exp(deltaY * 0.001);
+        const minViewHeight = viewHeightForPerspective(
+          props.minDistance,
+          DEFAULT_PERSPECTIVE_FOV_DEG,
+        );
+        const maxViewHeight = viewHeightForPerspective(
+          props.maxDistance,
+          DEFAULT_PERSPECTIVE_FOV_DEG,
+        );
+        const clampedViewHeight = MathUtils.clamp(
+          currentViewHeight * zoomFactor,
+          Math.min(minViewHeight, maxViewHeight),
+          Math.max(minViewHeight, maxViewHeight),
+        );
+        const nextZoom = orthoHeight / clampedViewHeight;
+        if (!Number.isFinite(nextZoom) || nextZoom <= 0) return;
+
+        activeCamera.zoom = nextZoom;
+        activeCamera.updateProjectionMatrix();
+        controls.update(0);
+
+        if (!hitBefore) {
+          invalidate();
+          return;
+        }
+
+        scratch.raycaster.setFromCamera(scratch.pointer, activeCamera);
+        const hitAfter = scratch.raycaster.ray.intersectPlane(
+          scratch.viewPlane,
+          scratch.tmpZoomAfter,
+        );
+
+        if (!hitAfter) {
+          invalidate();
+          return;
+        }
+
+        scratch.tmpDelta.copy(scratch.tmpZoomBefore).sub(scratch.tmpZoomAfter);
+
+        controls.setLookAt(
+          scratch.tmpPosition.x + scratch.tmpDelta.x,
+          scratch.tmpPosition.y + scratch.tmpDelta.y,
+          scratch.tmpPosition.z + scratch.tmpDelta.z,
+          scratch.tmpTarget.x + scratch.tmpDelta.x,
+          scratch.tmpTarget.y + scratch.tmpDelta.y,
+          scratch.tmpTarget.z + scratch.tmpDelta.z,
+          false,
+        );
+        controls.update(0);
+        invalidate();
+        return;
+      }
+
       setPivotPlaneAtTarget(scratch.tmpTarget);
 
-      const activeCamera = getActiveCamera();
       scratch.raycaster.setFromCamera(scratch.pointer, activeCamera);
       const hitBefore = scratch.raycaster.ray.intersectPlane(
         scratch.pivotPlane,
