@@ -1,12 +1,13 @@
 import type { CameraControlsImpl } from "@react-three/drei";
-import { Html } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MutableRefObject, RefObject } from "react";
+import { createPortal } from "react-dom";
 import { Vector3 } from "three";
 import { isOrthographicCamera, isPerspectiveCamera, type Projection } from "../camera";
 import type { LocalEnuFrame } from "../geo/localFrame";
 import type { Geodetic } from "../geo/wgs84";
+import { VIEWCUBE_MARGIN_RIGHT_PX, VIEWCUBE_MARGIN_TOP_PX, VIEWCUBE_WIDGET_WIDTH_PX } from "../ViewCube";
 import type { CameraRigDebugRefs } from "./useCameraRig";
 
 function formatNumber(value: number, decimals: number) {
@@ -33,6 +34,8 @@ export function ViewportDebugOverlay(props: {
   const gl = useThree((state) => state.gl);
   const fallbackCamera = useThree((state) => state.camera);
   const [enabled, setEnabled] = useState(props.enabledByDefault ?? true);
+  const [layout, setLayout] = useState(() => ({ rightPx: 8, topPx: 8 }));
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const preRef = useRef<HTMLPreElement | null>(null);
 
   const scratch = useMemo(
@@ -51,6 +54,64 @@ export function ViewportDebugOverlay(props: {
     const view = doc.defaultView;
     if (!view) return;
 
+    const parent = element.parentElement ?? doc.body;
+    const root = doc.createElement("div");
+    root.style.position = "absolute";
+    root.style.inset = "0";
+    root.style.pointerEvents = "none";
+    root.style.zIndex = "50";
+
+    const computed = view.getComputedStyle(parent);
+    const previousPosition = parent.style.position;
+    if (computed.position === "static") parent.style.position = "relative";
+
+    parent.appendChild(root);
+    setPortalRoot(root);
+
+    let frame: number | null = null;
+
+    const updateLayout = () => {
+      frame = null;
+
+      const canvasRect = element.getBoundingClientRect();
+      const viewportElement = doc.querySelector('[data-viewport-area="true"]') as HTMLElement | null;
+      const viewportRect = viewportElement?.getBoundingClientRect() ?? canvasRect;
+
+      const rightInset = Math.max(0, canvasRect.right - viewportRect.right);
+      const topInset = Math.max(0, viewportRect.top - canvasRect.top);
+
+      const gapPx = 12;
+      const next = {
+        rightPx: Math.round(rightInset + VIEWCUBE_MARGIN_RIGHT_PX + VIEWCUBE_WIDGET_WIDTH_PX + gapPx),
+        topPx: Math.round(topInset + VIEWCUBE_MARGIN_TOP_PX),
+      };
+
+      setLayout((current) => {
+        if (current.rightPx === next.rightPx && current.topPx === next.topPx) return current;
+        return next;
+      });
+    };
+
+    const scheduleLayout = () => {
+      if (frame !== null) return;
+      frame = view.requestAnimationFrame(updateLayout);
+    };
+
+    scheduleLayout();
+
+    view.addEventListener("resize", scheduleLayout);
+    view.addEventListener("scroll", scheduleLayout, { passive: true, capture: true });
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            scheduleLayout();
+          });
+
+    const viewportElement = doc.querySelector('[data-viewport-area="true"]') as HTMLElement | null;
+    if (resizeObserver && viewportElement) resizeObserver.observe(viewportElement);
+
     const isEditableTarget = (eventTarget: EventTarget | null) => {
       if (!(eventTarget instanceof Element)) return false;
       const editable = eventTarget.closest?.(
@@ -68,7 +129,15 @@ export function ViewportDebugOverlay(props: {
 
     view.addEventListener("keydown", onKeyDown, { capture: true });
     return () => {
+      if (frame !== null) view.cancelAnimationFrame(frame);
+      view.removeEventListener("resize", scheduleLayout);
+      view.removeEventListener("scroll", scheduleLayout, { capture: true } as any);
+      resizeObserver?.disconnect();
       view.removeEventListener("keydown", onKeyDown, { capture: true } as any);
+
+      root.remove();
+      setPortalRoot(null);
+      if (computed.position === "static") parent.style.position = previousPosition;
     };
   }, [gl]);
 
@@ -141,28 +210,29 @@ export function ViewportDebugOverlay(props: {
     pre.textContent = lines.join("\n");
   }, -100);
 
-  return (
-    <Html fullscreen>
-      <div
-        style={{
-          display: enabled ? "block" : "none",
-          position: "absolute",
-          top: 8,
-          left: 8,
-          padding: "10px 12px",
-          borderRadius: 10,
-          background: "rgba(0,0,0,0.6)",
-          color: "rgba(255,255,255,0.92)",
-          fontFamily:
-            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
-          fontSize: 12,
-          lineHeight: 1.25,
-          pointerEvents: "none",
-          whiteSpace: "pre",
-        }}
-      >
-        <pre ref={preRef} style={{ margin: 0 }} />
-      </div>
-    </Html>
+  if (!portalRoot) return null;
+
+  return createPortal(
+    <div
+      style={{
+        display: enabled ? "block" : "none",
+        position: "absolute",
+        top: layout.topPx,
+        right: layout.rightPx,
+        padding: "10px 12px",
+        borderRadius: 10,
+        background: "rgba(0,0,0,0.6)",
+        color: "rgba(255,255,255,0.92)",
+        fontFamily:
+          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
+        fontSize: 12,
+        lineHeight: 1.25,
+        pointerEvents: "none",
+        whiteSpace: "pre",
+      }}
+    >
+      <pre ref={preRef} style={{ margin: 0 }} />
+    </div>,
+    portalRoot,
   );
 }
