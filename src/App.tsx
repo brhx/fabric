@@ -35,7 +35,7 @@ function App() {
         <header
           data-tauri-drag-region
           data-ui-chrome="true"
-          className="pointer-events-auto flex h-12 items-center gap-3 border-b border-white/10 bg-black/20 px-3 backdrop-blur-xl"
+          className="pointer-events-auto flex h-12 items-center gap-3 border-b border-white/10 bg-black/20 px-2 backdrop-blur-xl"
         >
           <div className="flex items-center gap-1 pl-20">
             <TitleIconButton label="Home">
@@ -48,7 +48,7 @@ function App() {
 
           <ProjectTitle />
 
-          <div className="flex items-center gap-2 pr-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               data-tauri-drag-region="false"
@@ -62,7 +62,7 @@ function App() {
           </div>
         </header>
 
-        <div className="flex flex-1 min-h-0 min-w-0 gap-3 p-3 pt-3">
+        <div className="flex flex-1 min-h-0 min-w-0 gap-2 p-2">
           <aside className="pointer-events-auto w-72 min-h-0" data-ui-chrome="true">
             <GlassPanel className="flex h-full flex-col">
               <div className="flex items-center justify-between px-4 pt-4">
@@ -120,7 +120,7 @@ function App() {
             data-viewport-area="true"
             className="pointer-events-none relative flex-1 min-h-0 min-w-0 overflow-visible"
           >
-            <div className="pointer-events-none absolute -left-2 top-0 bottom-0 flex flex-col justify-between">
+            <div className="pointer-events-none absolute left-0 top-0 bottom-0 flex flex-col justify-between">
               <Dock>
                 <DockButton label="Tool A">
                   <span className="h-5 w-5 rounded-md bg-emerald-400" />
@@ -158,7 +158,7 @@ function App() {
               </Dock>
             </div>
 
-            <Dock className="absolute -right-2 top-0">
+            <Dock className="absolute right-0 top-0">
               <DockButton label="Pin">
                 <LuPin className="h-5 w-5" />
               </DockButton>
@@ -211,7 +211,7 @@ function GlassPanel(props: { className?: string; children: ReactNode }) {
   return (
     <div
       className={[
-        "relative overflow-hidden rounded-2xl border border-white/10 bg-black/25 bg-clip-padding shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl",
+        "relative overflow-hidden rounded-xl border border-white/10 bg-black/25 bg-clip-padding shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl",
         props.className,
       ]
         .filter(Boolean)
@@ -239,7 +239,7 @@ function Dock(props: { className?: string; children: ReactNode }) {
   return (
     <div
       className={[
-        "pointer-events-auto rounded-2xl border border-white/10 bg-black/20 p-1 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl",
+        "pointer-events-auto rounded-xl border border-white/10 bg-black/20 p-1 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl",
         props.className,
       ]
         .filter(Boolean)
