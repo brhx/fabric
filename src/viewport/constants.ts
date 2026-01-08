@@ -1,0 +1,11 @@
+export const MIN_DISTANCE = 2;
+export const MAX_DISTANCE = 20000;
+export const ROTATE_SPEED = 0.0022;
+export const DEFAULT_PERSPECTIVE_FOV_DEG = 45;
+export const MIN_PERSPECTIVE_FOV_DEG = 1.35;
+export const MIN_ORTHO_ZOOM = 0.08;
+export const MAX_ORTHO_ZOOM = 240;
+export const ORTHO_SWITCH_TOLERANCE_RADIANS = 0.008;
+export const ORTHO_SWITCH_TOLERANCE_COS = Math.cos(ORTHO_SWITCH_TOLERANCE_RADIANS);
+export const ORTHO_SWITCH_IGNORE_MS = 520;
+export const AXES_OVERLAY_LENGTH = 45000;

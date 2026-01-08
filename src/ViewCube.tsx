@@ -12,11 +12,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { LuRotateCcw, LuRotateCw } from "react-icons/lu";
 import { isPerspectiveCamera, type Projection } from "./camera";
+import { stabilizePoleDirection } from "./viewport/poleNudge";
 import {
   CanvasTexture,
   Group,
   MathUtils,
-  Matrix4,
   Mesh,
   OrthographicCamera as ThreeOrthographicCamera,
   PerspectiveCamera as ThreePerspectiveCamera,
@@ -47,6 +47,7 @@ const VIEWCUBE_BUTTON_OFFSET_X_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 25;
 const VIEWCUBE_BUTTON_OFFSET_Y_PX = VIEWCUBE_CUBE_SIZE_PX / 2 + 20;
 
 const VIEWCUBE_CONTENT_ROTATION: [number, number, number] = [Math.PI / 2, 0, 0];
+const VIEWCUBE_PERSPECTIVE_DISTANCE_SCALE = 0.7;
 
 const VIEWCUBE_WIDGET_WIDTH_PX = VIEWCUBE_BUTTON_OFFSET_X_PX * 2 + VIEWCUBE_BUTTON_SIZE_PX;
 const VIEWCUBE_WIDGET_HEIGHT_PX =
@@ -60,12 +61,12 @@ const COLOR_AXIS_Y = "#4fc07f";
 const COLOR_AXIS_Z = "#4a7cff";
 
 const FACE_LABELS = [
-  { key: "right", label: "Right", localNormal: new Vector3(1, 0, 0), worldDir: new Vector3(1, 0, 0) },
-  { key: "left", label: "Left", localNormal: new Vector3(-1, 0, 0), worldDir: new Vector3(-1, 0, 0) },
-  { key: "top", label: "Top", localNormal: new Vector3(0, 1, 0), worldDir: new Vector3(0, 0, 1) },
-  { key: "bottom", label: "Bottom", localNormal: new Vector3(0, -1, 0), worldDir: new Vector3(0, 0, -1) },
-  { key: "front", label: "Front", localNormal: new Vector3(0, 0, 1), worldDir: new Vector3(0, -1, 0) },
-  { key: "back", label: "Back", localNormal: new Vector3(0, 0, -1), worldDir: new Vector3(0, 1, 0) },
+  { key: "right", label: "Right", localNormal: new Vector3(1, 0, 0) },
+  { key: "left", label: "Left", localNormal: new Vector3(-1, 0, 0) },
+  { key: "top", label: "Top", localNormal: new Vector3(0, 1, 0) },
+  { key: "bottom", label: "Bottom", localNormal: new Vector3(0, -1, 0) },
+  { key: "front", label: "Front", localNormal: new Vector3(0, 0, 1) },
+  { key: "back", label: "Back", localNormal: new Vector3(0, 0, -1) },
 ] as const;
 
 type ViewCubeHit = {
@@ -85,7 +86,10 @@ function localDirectionToWorldDirection(
   return [world.x, world.y, world.z];
 }
 
-function getViewCubeHitFromLocalPoint(localPoint: Vector3): ViewCubeHit {
+function getViewCubeHitFromLocalPoint(
+  localPoint: Vector3,
+  localToWorld: (direction: [number, number, number]) => [number, number, number],
+): ViewCubeHit {
   const half = VIEWCUBE_CUBE_SIZE_PX / 2;
   const hitThreshold = Math.max(1, VIEWCUBE_HIT_BAND_PX);
 
@@ -100,7 +104,7 @@ function getViewCubeHitFromLocalPoint(localPoint: Vector3): ViewCubeHit {
   const corner: ViewCubeHit = {
     kind: "corner",
     localDirection: [sx, sy, sz],
-    worldDirection: localDirectionToWorldDirection([sx, sy, sz]),
+    worldDirection: localToWorld([sx, sy, sz]),
   };
 
   // Classify based on the dominant axis (which face we hit), then whether we're near
@@ -114,7 +118,7 @@ function getViewCubeHitFromLocalPoint(localPoint: Vector3): ViewCubeHit {
       return {
         kind: "edge",
         localDirection,
-        worldDirection: localDirectionToWorldDirection(localDirection),
+        worldDirection: localToWorld(localDirection),
       };
     }
     if (nearZ) {
@@ -122,7 +126,7 @@ function getViewCubeHitFromLocalPoint(localPoint: Vector3): ViewCubeHit {
       return {
         kind: "edge",
         localDirection,
-        worldDirection: localDirectionToWorldDirection(localDirection),
+        worldDirection: localToWorld(localDirection),
       };
     }
 
@@ -130,7 +134,7 @@ function getViewCubeHitFromLocalPoint(localPoint: Vector3): ViewCubeHit {
     return {
       kind: "face",
       localDirection,
-      worldDirection: localDirectionToWorldDirection(localDirection),
+      worldDirection: localToWorld(localDirection),
     };
   }
 
@@ -143,7 +147,7 @@ function getViewCubeHitFromLocalPoint(localPoint: Vector3): ViewCubeHit {
       return {
         kind: "edge",
         localDirection,
-        worldDirection: localDirectionToWorldDirection(localDirection),
+        worldDirection: localToWorld(localDirection),
       };
     }
     if (nearZ) {
@@ -151,7 +155,7 @@ function getViewCubeHitFromLocalPoint(localPoint: Vector3): ViewCubeHit {
       return {
         kind: "edge",
         localDirection,
-        worldDirection: localDirectionToWorldDirection(localDirection),
+        worldDirection: localToWorld(localDirection),
       };
     }
 
@@ -159,7 +163,7 @@ function getViewCubeHitFromLocalPoint(localPoint: Vector3): ViewCubeHit {
     return {
       kind: "face",
       localDirection,
-      worldDirection: localDirectionToWorldDirection(localDirection),
+      worldDirection: localToWorld(localDirection),
     };
   }
 
@@ -171,7 +175,7 @@ function getViewCubeHitFromLocalPoint(localPoint: Vector3): ViewCubeHit {
     return {
       kind: "edge",
       localDirection,
-      worldDirection: localDirectionToWorldDirection(localDirection),
+      worldDirection: localToWorld(localDirection),
     };
   }
   if (nearY) {
@@ -179,7 +183,7 @@ function getViewCubeHitFromLocalPoint(localPoint: Vector3): ViewCubeHit {
     return {
       kind: "edge",
       localDirection,
-      worldDirection: localDirectionToWorldDirection(localDirection),
+      worldDirection: localToWorld(localDirection),
     };
   }
 
@@ -187,7 +191,7 @@ function getViewCubeHitFromLocalPoint(localPoint: Vector3): ViewCubeHit {
   return {
     kind: "face",
     localDirection,
-    worldDirection: localDirectionToWorldDirection(localDirection),
+    worldDirection: localToWorld(localDirection),
   };
 }
 
@@ -196,6 +200,7 @@ type ViewCubeProps = {
   projection: Projection;
   onSelectDirection?: (worldDirection: [number, number, number]) => void;
   onRotateAroundUp?: (radians: number) => void;
+  getWorldDirectionFromLocalDirection?: (localDirection: [number, number, number]) => [number, number, number];
 };
 
 export function ViewCube(props: ViewCubeProps) {
@@ -221,9 +226,11 @@ export function ViewCube(props: ViewCubeProps) {
 
   const [hoverHit, setHoverHit] = useState<ViewCubeHit | null>(null);
 
+  const localToWorldDirection = props.getWorldDirectionFromLocalDirection ?? localDirectionToWorldDirection;
+
   const scratch = useMemo(
     () => ({
-      matrix: new Matrix4(),
+      quaternion: new Quaternion(),
       worldDirection: new Vector3(),
       target: new Vector3(),
       position: new Vector3(),
@@ -299,8 +306,9 @@ export function ViewCube(props: ViewCubeProps) {
     const orientation = orientationRef.current;
     if (!orientation) return;
     const sourceCamera = props.controls.current?.camera ?? camera;
-    scratch.matrix.copy(sourceCamera.matrixWorld).invert();
-    orientation.quaternion.setFromRotationMatrix(scratch.matrix);
+    sourceCamera.getWorldQuaternion(scratch.quaternion);
+    scratch.quaternion.invert();
+    orientation.quaternion.copy(scratch.quaternion);
 
     const canvasWidth = size.width;
     const canvasHeight = size.height;
@@ -330,6 +338,10 @@ export function ViewCube(props: ViewCubeProps) {
           canvasWidth,
           canvasHeight,
         );
+        const nextZoom = 1 / VIEWCUBE_PERSPECTIVE_DISTANCE_SCALE;
+        if (hudOrtho.zoom !== nextZoom) {
+          hudOrtho.zoom = nextZoom;
+        }
         hudOrtho.updateProjectionMatrix();
       }
     }
@@ -344,7 +356,7 @@ export function ViewCube(props: ViewCubeProps) {
       const denom = 2 * Math.tan(fovRad / 2);
       if (!Number.isFinite(denom) || denom === 0) return;
 
-      const distance = size.height / denom;
+      const distance = (size.height / denom) * VIEWCUBE_PERSPECTIVE_DISTANCE_SCALE;
       if (!Number.isFinite(distance) || distance <= 0) return;
 
       hudPerspective.fov = mainFovDeg;
@@ -366,13 +378,13 @@ export function ViewCube(props: ViewCubeProps) {
 
     scratch.worldDirection.copy(worldDirection).normalize();
 
-    const up = controls.camera.up.clone().normalize();
-    const poleThreshold = 0.98;
-    if (Math.abs(scratch.worldDirection.dot(up)) > poleThreshold) {
-      scratch.nudge.set(1, 0, 0);
-      if (Math.abs(scratch.nudge.dot(up)) > 0.9) scratch.nudge.set(0, 1, 0);
-      scratch.worldDirection.addScaledVector(scratch.nudge, 0.001).normalize();
-    }
+    scratch.nudge.copy(scratch.position).sub(scratch.target);
+    stabilizePoleDirection({
+      direction: scratch.worldDirection,
+      up: controls.camera.up,
+      viewVector: scratch.nudge,
+      poleThreshold: 0.98,
+    });
 
     scratch.position.copy(scratch.target).addScaledVector(scratch.worldDirection, radius);
 
@@ -440,7 +452,7 @@ export function ViewCube(props: ViewCubeProps) {
     scratch.localPoint.copy(event.point);
     cube.worldToLocal(scratch.localPoint);
 
-    setHoverHit(getViewCubeHitFromLocalPoint(scratch.localPoint));
+    setHoverHit(getViewCubeHitFromLocalPoint(scratch.localPoint, localToWorldDirection));
     invalidate();
   };
 
@@ -483,7 +495,7 @@ export function ViewCube(props: ViewCubeProps) {
     scratch.localPoint.copy(event.point);
     cube.worldToLocal(scratch.localPoint);
 
-    const hit = getViewCubeHitFromLocalPoint(scratch.localPoint);
+    const hit = getViewCubeHitFromLocalPoint(scratch.localPoint, localToWorldDirection);
     setHoverHit(hit);
     startCubeInteraction(event, hit.worldDirection);
     invalidate();
@@ -622,7 +634,7 @@ export function ViewCube(props: ViewCubeProps) {
 
             <ViewCubeHoverHighlight hit={hoverHit} />
 
-            {FACE_LABELS.map(({ key, localNormal, worldDir }) => (
+            {FACE_LABELS.map(({ key, localNormal }) => (
               <mesh
                 key={key}
                 position={[
@@ -632,13 +644,17 @@ export function ViewCube(props: ViewCubeProps) {
                 ]}
                 rotation={normalToPlaneRotation(localNormal)}
                 onPointerDown={(event) => {
-                  startCubeInteraction(event, [worldDir.x, worldDir.y, worldDir.z]);
+                  startCubeInteraction(
+                    event,
+                    localToWorldDirection([localNormal.x, localNormal.y, localNormal.z]),
+                  );
                 }}
                 onPointerOver={() => {
+                  const [wx, wy, wz] = localToWorldDirection([localNormal.x, localNormal.y, localNormal.z]);
                   setHoverHit({
                     kind: "face",
                     localDirection: [localNormal.x, localNormal.y, localNormal.z],
-                    worldDirection: [worldDir.x, worldDir.y, worldDir.z],
+                    worldDirection: [wx, wy, wz],
                   });
                   invalidate();
                 }}
