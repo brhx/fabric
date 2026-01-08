@@ -1,40 +1,33 @@
 import {
   CameraControlsImpl,
+  OrthographicCamera as DreiOrthographicCamera,
   PerspectiveCamera as DreiPerspectiveCamera,
 } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
-import type { Vector3 } from "three";
 import { AxesHelper, LineBasicMaterial } from "three";
 import { ViewCube } from "./ViewCube";
-import { GeoRoot } from "./geo/GeoRoot";
-import { useGeoFrame } from "./geo/useGeoFrame";
 import { StableCameraControls } from "./viewport/StableCameraControls";
 import { TrackpadControls } from "./viewport/TrackpadControls";
-import { ViewportDebugOverlay } from "./viewport/ViewportDebugOverlay";
 import {
   AXES_OVERLAY_LENGTH,
   MAX_DISTANCE,
+  MAX_ORTHO_ZOOM,
   MIN_DISTANCE,
+  MIN_ORTHO_ZOOM,
   PAN_SPEED,
   ROTATE_SPEED,
 } from "./viewport/constants";
-import { matchDefaultViewShortcut } from "./viewport/defaultViews";
 import { useCameraRig } from "./viewport/useCameraRig";
+import { matchDefaultViewShortcut } from "./viewport/defaultViews";
 
 export function Viewport3D(props: { className?: string }) {
   return (
-    <div
-      className={["h-full w-full", props.className].filter(Boolean).join(" ")}
-    >
+    <div className={["h-full w-full", props.className].filter(Boolean).join(" ")}>
       <Canvas
         frameloop="demand"
         dpr={[1, 2]}
-        gl={{
-          antialias: true,
-          alpha: false,
-          powerPreference: "high-performance",
-        }}
+        gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
         style={{ touchAction: "none" }}
         onCreated={({ gl }) => {
           gl.setClearColor("#0b0c10", 1);
@@ -49,7 +42,6 @@ export function Viewport3D(props: { className?: string }) {
 function Viewport3DContent() {
   const gl = useThree((state) => state.gl);
   const rig = useCameraRig();
-  const geo = useGeoFrame();
 
   useEffect(() => {
     const element = gl.domElement;
@@ -72,7 +64,6 @@ function Viewport3DContent() {
 
       event.preventDefault();
       event.stopPropagation();
-      geo.reset();
       rig.requestDefaultView(defaultView.id);
     };
 
@@ -80,16 +71,12 @@ function Viewport3DContent() {
     return () => {
       view.removeEventListener("keydown", onKeyDown, { capture: true });
     };
-  }, [geo.reset, gl, rig.requestDefaultView]);
+  }, [gl, rig.requestDefaultView]);
 
   return (
     <>
-      <DreiPerspectiveCamera
-        ref={rig.perspectiveCameraRef}
-        up={[0, 0, 1]}
-        near={0.1}
-        far={50000}
-      />
+      <DreiPerspectiveCamera ref={rig.perspectiveCameraRef} up={[0, 0, 1]} near={0.1} far={50000} />
+      <DreiOrthographicCamera ref={rig.orthographicCameraRef} up={[0, 0, 1]} near={0.1} far={50000} />
 
       <StableCameraControls
         ref={rig.controlsRef}
@@ -118,34 +105,26 @@ function Viewport3DContent() {
         panSpeed={PAN_SPEED}
         minDistance={MIN_DISTANCE}
         maxDistance={MAX_DISTANCE}
-        onRenderPan={geo.translateRender}
+        minOrthoZoom={MIN_ORTHO_ZOOM}
+        maxOrthoZoom={MAX_ORTHO_ZOOM}
+        onOrbitInput={rig.handleOrbitInput}
       />
 
-      <MainScene renderOffset={geo.renderOffset} />
-      <GeoRoot frame={geo.frame} />
-      <ViewportDebugOverlay
-        controlsRef={rig.controlsRef}
-        worldUnitsPerPixelRef={rig.worldUnitsPerPixelRef}
-        geo={{
-          geodetic: geo.geodetic,
-          originEcef: geo.originEcef,
-          renderOffset: geo.renderOffset,
-          frame: geo.frame,
-        }}
-      />
+      <MainScene />
       <ViewCube
         controls={rig.controlsRef}
-        getWorldDirectionFromLocalDirection={
-          rig.getWorldDirectionFromLocalDirection
-        }
+        onSelectDirection={rig.enterOrthographicView}
+        onRotateAroundUp={rig.handleRotateAroundUp}
+        onOrbitInput={rig.handleOrbitInput}
+        getWorldDirectionFromLocalDirection={rig.getWorldDirectionFromLocalDirection}
       />
     </>
   );
 }
 
-function MainScene(props: { renderOffset: Vector3 }) {
+function MainScene() {
   return (
-    <group position={props.renderOffset}>
+    <>
       <ambientLight intensity={0.6} />
 
       <group rotation={[Math.PI / 2, 0, 0]}>
@@ -154,7 +133,7 @@ function MainScene(props: { renderOffset: Vector3 }) {
       </group>
 
       <AxesOverlay size={AXES_OVERLAY_LENGTH} />
-    </group>
+    </>
   );
 }
 
