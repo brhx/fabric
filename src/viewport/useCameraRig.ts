@@ -167,6 +167,10 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       if (controls) controls.camera = orthographic;
       setProjection("orthographic");
       invalidate();
+      if (perspective && perspective.fov !== DEFAULT_PERSPECTIVE_FOV_DEG) {
+        perspective.fov = DEFAULT_PERSPECTIVE_FOV_DEG;
+        perspective.updateProjectionMatrix();
+      }
     },
     [invalidate, set],
   );
@@ -203,7 +207,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       );
 
       const perspective = perspectiveCameraRef.current;
-      if (perspective) {
+      if (perspective && !needsOrtho) {
         perspective.fov = DEFAULT_PERSPECTIVE_FOV_DEG;
         perspective.updateProjectionMatrix();
       }
