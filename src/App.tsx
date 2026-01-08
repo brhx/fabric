@@ -74,7 +74,7 @@ function App() {
               <div className="mt-3 flex-1 min-h-0 overflow-auto px-3 pb-3 overscroll-contain">
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-white/75 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-white/[0.08] hover:text-white"
+                  className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.05] bg-clip-padding px-3 py-2 text-sm text-white/75 hover:bg-white/[0.08] hover:text-white"
                 >
                   <span className="flex items-center gap-2">
                     <span className="h-1.5 w-1.5 rounded-full bg-white/45" />
@@ -101,13 +101,13 @@ function App() {
                 <div className="flex items-center justify-between">
                   <button
                     type="button"
-                    className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-white/[0.08] hover:text-white"
+                    className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/[0.04] bg-clip-padding text-white/65 hover:bg-white/[0.08] hover:text-white"
                   >
                     <LuPlus className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
-                    className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-white/[0.08] hover:text-white"
+                    className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/[0.04] bg-clip-padding text-white/65 hover:bg-white/[0.08] hover:text-white"
                   >
                     <LuEllipsis className="h-4 w-4" />
                   </button>
@@ -179,7 +179,7 @@ function App() {
                 </div>
                 <button
                   type="button"
-                  className="grid h-8 w-8 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-white/[0.08] hover:text-white"
+                  className="grid h-8 w-8 place-items-center rounded-xl border border-white/10 bg-white/[0.04] bg-clip-padding text-white/55 hover:bg-white/[0.08] hover:text-white"
                 >
                   <LuChevronDown className="h-4 w-4" />
                 </button>
@@ -188,7 +188,7 @@ function App() {
               <div className="mt-3 flex-1 min-h-0 overflow-auto px-3 pb-3 overscroll-contain">
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-white/[0.09]"
+                  className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.06] bg-clip-padding px-3 py-2 text-sm text-white hover:bg-white/[0.09]"
                 >
                   <span className="flex items-center gap-2">
                     <span className="grid h-6 w-6 place-items-center rounded-lg bg-white/[0.06] text-white/70 ring-1 ring-inset ring-white/[0.08]">
@@ -211,20 +211,12 @@ function GlassPanel(props: { className?: string; children: ReactNode }) {
   return (
     <div
       className={[
-        "relative overflow-hidden rounded-2xl border border-white/10 bg-black/20 shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl backdrop-saturate-150",
+        "relative overflow-hidden rounded-2xl border border-white/10 bg-black/25 bg-clip-padding shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl",
         props.className,
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-white/[0.04]"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/[0.06]"
-      />
       <div className="relative h-full w-full">{props.children}</div>
     </div>
   );
