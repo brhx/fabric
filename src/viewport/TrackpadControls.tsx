@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import { useThree } from "@react-three/fiber";
 import { MathUtils, Object3D, Plane, Raycaster, Vector2, Vector3 } from "three";
-import { isOrthographicCamera, isPerspectiveCamera } from "../camera";
+import { isPerspectiveCamera } from "../camera";
 import type { WorldFrame } from "./worldFrame";
 
 export function TrackpadControls(props: {
@@ -13,8 +13,6 @@ export function TrackpadControls(props: {
   panSpeed: number;
   minDistance: number;
   maxDistance: number;
-  minOrthoZoom: number;
-  maxOrthoZoom: number;
   onOrbitInput?: (azimuthRadians: number, polarRadians: number) => boolean;
   onRenderPan?: (deltaRender: Vector3) => void;
 }) {
@@ -48,15 +46,6 @@ export function TrackpadControls(props: {
     if (!view) return;
 
     const getActiveCamera = () => props.controlsRef.current?.camera ?? camera;
-
-    const resolveCameras = () => {
-      const activeCamera = getActiveCamera();
-      return {
-        activeCamera,
-        orthographicCamera: isOrthographicCamera(activeCamera) ? activeCamera : null,
-        perspectiveCamera: isPerspectiveCamera(activeCamera) ? activeCamera : null,
-      };
-    };
 
     const isSceneHelper = (object: Object3D | null) => {
       let current: Object3D | null = object;
@@ -102,7 +91,7 @@ export function TrackpadControls(props: {
 
       if (!setPointer(clientX, clientY)) return;
 
-      const { activeCamera } = resolveCameras();
+      const activeCamera = getActiveCamera();
       scratch.raycaster.setFromCamera(scratch.pointer, activeCamera);
       const intersections = scratch.raycaster.intersectObjects(scene.children, true);
       const intersection = intersections.find(({ object }) => !isSceneHelper(object));
@@ -142,26 +131,28 @@ export function TrackpadControls(props: {
       const controls = props.controlsRef.current;
       if (!controls) return;
 
+      // NOTE: If/when orthographic views return, pan must be view‑plane relative:
+      // - Treat the camera as fixed‑orientation; do NOT orbit or reorient on pan.
+      // - Move camera + target together along the plane perpendicular to the view
+      //   direction, using the camera's right/up vectors as the axes.
+      // - Scale should come from ortho height/zoom (constant units per pixel),
+      //   so dragging right/up always translates along camera right/up.
+      // This keeps ortho panning consistent from any view cube face/corner and
+      // avoids "tangent to globe" behavior that feels wrong for oblique ortho views.
+
       const viewportHeight = Math.max(1, element.clientHeight);
 
       let distanceScale = 0;
-      const { orthographicCamera, perspectiveCamera } = resolveCameras();
-      if (orthographicCamera) {
-        if (!orthographicCamera) return;
-        const zoom = Math.max(orthographicCamera.zoom, 1e-6);
-        const orthoHeight = orthographicCamera.top - orthographicCamera.bottom;
-        distanceScale = orthoHeight / zoom / viewportHeight;
-      } else {
-        if (!perspectiveCamera) return;
-        controls.getTarget(scratch.tmpTarget);
-        controls.getPosition(scratch.tmpPosition);
+      const activeCamera = getActiveCamera();
+      if (!isPerspectiveCamera(activeCamera)) return;
+      controls.getTarget(scratch.tmpTarget);
+      controls.getPosition(scratch.tmpPosition);
 
-        const targetDistance = scratch.tmpPosition.distanceTo(scratch.tmpTarget);
-        if (!Number.isFinite(targetDistance) || targetDistance <= 0) return;
+      const targetDistance = scratch.tmpPosition.distanceTo(scratch.tmpTarget);
+      if (!Number.isFinite(targetDistance) || targetDistance <= 0) return;
 
-        const fovInRadians = (perspectiveCamera.fov * Math.PI) / 180;
-        distanceScale = (2 * targetDistance * Math.tan(fovInRadians / 2)) / viewportHeight;
-      }
+      const fovInRadians = (activeCamera.fov * Math.PI) / 180;
+      distanceScale = (2 * targetDistance * Math.tan(fovInRadians / 2)) / viewportHeight;
 
       const panX = deltaX * distanceScale * props.panSpeed;
       const panY = deltaY * distanceScale * props.panSpeed;
@@ -209,55 +200,11 @@ export function TrackpadControls(props: {
 
       setPivotPlaneAtTarget(scratch.tmpTarget);
 
-      const { activeCamera, orthographicCamera, perspectiveCamera } = resolveCameras();
+      const activeCamera = getActiveCamera();
       scratch.raycaster.setFromCamera(scratch.pointer, activeCamera);
       const hitBefore = scratch.raycaster.ray.intersectPlane(scratch.pivotPlane, scratch.tmpZoomBefore);
 
-      if (orthographicCamera) {
-        if (!orthographicCamera) return;
-        const zoomFactor = Math.exp(deltaY * 0.001);
-        const nextZoom = MathUtils.clamp(
-          orthographicCamera.zoom / zoomFactor,
-          props.minOrthoZoom,
-          props.maxOrthoZoom,
-        );
-
-        controls.getTarget(scratch.tmpTarget);
-        controls.getPosition(scratch.tmpPosition);
-
-        controls.zoomTo(nextZoom, false);
-        controls.update(0);
-
-        if (!hitBefore) {
-          invalidate();
-          return;
-        }
-
-        scratch.raycaster.setFromCamera(scratch.pointer, activeCamera);
-        const hitAfter = scratch.raycaster.ray.intersectPlane(scratch.pivotPlane, scratch.tmpZoomAfter);
-
-        if (!hitAfter) {
-          invalidate();
-          return;
-        }
-
-        scratch.tmpDelta.copy(scratch.tmpZoomBefore).sub(scratch.tmpZoomAfter);
-
-        controls.setLookAt(
-          scratch.tmpPosition.x + scratch.tmpDelta.x,
-          scratch.tmpPosition.y + scratch.tmpDelta.y,
-          scratch.tmpPosition.z + scratch.tmpDelta.z,
-          scratch.tmpTarget.x + scratch.tmpDelta.x,
-          scratch.tmpTarget.y + scratch.tmpDelta.y,
-          scratch.tmpTarget.z + scratch.tmpDelta.z,
-          false,
-        );
-        controls.update(0);
-        invalidate();
-        return;
-      }
-
-      if (!perspectiveCamera) return;
+      if (!isPerspectiveCamera(activeCamera)) return;
       scratch.tmpOffset.copy(scratch.tmpPosition).sub(scratch.tmpTarget);
       const currentDistance = scratch.tmpOffset.length();
       if (!Number.isFinite(currentDistance) || currentDistance <= 0) return;
@@ -385,9 +332,7 @@ export function TrackpadControls(props: {
     invalidate,
     props.controlsRef,
     props.maxDistance,
-    props.maxOrthoZoom,
     props.minDistance,
-    props.minOrthoZoom,
     props.panSpeed,
     props.rotateSpeed,
     props.onOrbitInput,

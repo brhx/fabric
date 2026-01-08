@@ -3,7 +3,6 @@ import {
   Edges,
   Html,
   Hud,
-  OrthographicCamera,
   PerspectiveCamera,
   RoundedBox,
 } from "@react-three/drei";
@@ -18,7 +17,6 @@ import {
   Group,
   MathUtils,
   Mesh,
-  OrthographicCamera as ThreeOrthographicCamera,
   PerspectiveCamera as ThreePerspectiveCamera,
   Quaternion,
   Vector3,
@@ -214,14 +212,13 @@ type ViewCubeProps = {
 };
 
 export function ViewCube(props: ViewCubeProps) {
-  const { gl, invalidate, size, camera } = useThree();
+  const { gl, invalidate, size } = useThree();
   const [margin, setMargin] = useState<[number, number]>(() => [
     VIEWCUBE_MARGIN_RIGHT_PX + VIEWCUBE_WIDGET_WIDTH_PX / 2,
     VIEWCUBE_MARGIN_TOP_PX + VIEWCUBE_WIDGET_HEIGHT_PX / 2,
   ]);
 
   const hudPerspectiveCameraRef = useRef<ThreePerspectiveCamera | null>(null);
-  const hudOrthographicCameraRef = useRef<ThreeOrthographicCamera | null>(null);
   const cubeRef = useRef<Mesh | null>(null);
   const orientationRef = useRef<Group | null>(null);
   const dragStateRef = useRef<{
@@ -237,8 +234,6 @@ export function ViewCube(props: ViewCubeProps) {
   const [hoverHit, setHoverHit] = useState<ViewCubeHit | null>(null);
 
   const localToWorldDirection = props.getWorldDirectionFromLocalDirection ?? localDirectionToWorldDirection;
-  const isMainPerspective = isPerspectiveCamera(props.controls.current?.camera ?? camera);
-
   const scratch = useMemo(
     () => ({
       quaternion: new Quaternion(),
@@ -339,22 +334,6 @@ export function ViewCube(props: ViewCubeProps) {
         );
       }
 
-      const hudOrtho = hudOrthographicCameraRef.current;
-      if (hudOrtho) {
-        hudOrtho.setViewOffset(
-          canvasWidth,
-          canvasHeight,
-          viewOffsetX,
-          viewOffsetY,
-          canvasWidth,
-          canvasHeight,
-        );
-        const nextZoom = 1 / VIEWCUBE_PERSPECTIVE_DISTANCE_SCALE;
-        if (hudOrtho.zoom !== nextZoom) {
-          hudOrtho.zoom = nextZoom;
-        }
-        hudOrtho.updateProjectionMatrix();
-      }
     }
     if (isPerspectiveCamera(sourceCamera)) {
       const hudPerspective = hudPerspectiveCameraRef.current;
@@ -601,19 +580,9 @@ export function ViewCube(props: ViewCubeProps) {
         ref={(node) => {
           hudPerspectiveCameraRef.current = node;
         }}
-        makeDefault={isMainPerspective}
+        makeDefault
         position={[0, 0, 2000]}
         fov={45}
-        near={0.1}
-        far={50000}
-      />
-      <OrthographicCamera
-        ref={(node) => {
-          hudOrthographicCameraRef.current = node;
-        }}
-        makeDefault={!isMainPerspective}
-        position={[0, 0, 200]}
-        zoom={1}
         near={0.1}
         far={50000}
       />

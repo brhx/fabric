@@ -4,11 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { MutableRefObject, RefObject } from "react";
 import { Vector3 } from "three";
 import { Html } from "@react-three/drei";
-import { isOrthographicCamera, isPerspectiveCamera, type Projection } from "../camera";
+import { isPerspectiveCamera } from "../camera";
 import type { LocalEnuFrame } from "../geo/localFrame";
 import type { Geodetic } from "../geo/wgs84";
 import { VIEWCUBE_MARGIN_RIGHT_PX, VIEWCUBE_MARGIN_TOP_PX, VIEWCUBE_WIDGET_WIDTH_PX } from "../ViewCube";
-import type { CameraRigDebugRefs } from "./useCameraRig";
 
 function formatNumber(value: number, decimals: number) {
   if (!Number.isFinite(value)) return "NaN";
@@ -25,9 +24,7 @@ function radToDeg(rad: number) {
 
 export function ViewportDebugOverlay(props: {
   controlsRef: RefObject<CameraControlsImpl | null>;
-  projection: Projection;
   worldUnitsPerPixelRef: MutableRefObject<number>;
-  rigDebug: CameraRigDebugRefs;
   geo: { geodetic: Geodetic; originEcef: Vector3; renderOffset: Vector3; frame: LocalEnuFrame };
   enabledByDefault?: boolean;
 }) {
@@ -153,7 +150,6 @@ export function ViewportDebugOverlay(props: {
 
     const controls = props.controlsRef.current;
     const activeCamera = controls?.camera ?? fallbackCamera;
-    const isOrtho = isOrthographicCamera(activeCamera);
     const isPersp = isPerspectiveCamera(activeCamera);
 
     if (controls) {
@@ -168,10 +164,6 @@ export function ViewportDebugOverlay(props: {
     const distance = scratch.position.distanceTo(scratch.target);
     const unitsPerPixel = props.worldUnitsPerPixelRef.current;
 
-    const lock = props.rigDebug.orthoLockRef.current;
-    const pending = props.rigDebug.pendingOrthoEnterRef.current;
-    const lastPerspective = props.rigDebug.lastPerspectiveRef.current;
-
     const { geodetic, originEcef, renderOffset, frame } = props.geo;
 
     const latDeg = radToDeg(geodetic.latRad);
@@ -180,26 +172,13 @@ export function ViewportDebugOverlay(props: {
     const lines: string[] = [];
     lines.push("Viewport Debug  (toggle: D)");
     lines.push("");
-    lines.push(`projection: ${props.projection}`);
-    lines.push(`camera: ${isPersp ? "perspective" : isOrtho ? "orthographic" : "unknown"}`);
+    lines.push(`camera: ${isPersp ? "perspective" : "unknown"}`);
     if (isPersp) lines.push(`fov: ${formatNumber(activeCamera.fov, 2)}°`);
-    if (isOrtho) lines.push(`zoom: ${formatNumber(activeCamera.zoom, 4)}`);
     lines.push(`pos: ${formatVec3(scratch.position, 3)}`);
     lines.push(`tgt: ${formatVec3(scratch.target, 3)}`);
     lines.push(`up:  ${formatVec3(scratch.up, 3)}`);
     lines.push(`distance: ${formatNumber(distance, 3)}`);
     lines.push(`units/px: ${formatNumber(unitsPerPixel, 6)}`);
-    lines.push("");
-    lines.push(
-      `orthoLock: ${lock ? "yes" : "no"}${lock?.poleLocked ? " (poleLocked)" : ""}`,
-    );
-    if (lock) lines.push(`lockDir: ${formatVec3(lock.direction, 4)}`);
-    if (pending) lines.push(`pendingOrthoEnter.viewHeight: ${formatNumber(pending.viewHeight, 4)}`);
-    if (lastPerspective) {
-      scratch.tmp.copy(lastPerspective.position).sub(lastPerspective.target);
-      lines.push(`lastPerspective.fov: ${formatNumber(lastPerspective.fov, 2)}°`);
-      lines.push(`lastPerspective.distance: ${formatNumber(scratch.tmp.length(), 3)}`);
-    }
     lines.push("");
     lines.push(`WGS84 lat/lon: ${formatNumber(latDeg, 6)}°, ${formatNumber(lonDeg, 6)}°`);
     lines.push(`WGS84 height: ${formatNumber(geodetic.heightMeters, 3)} m`);

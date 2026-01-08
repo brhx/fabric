@@ -1,15 +1,19 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Vector3 } from "three";
 import { createLocalEnuFrameAtEcef, type LocalEnuFrame } from "./localFrame";
 import { ecefToGeodetic, geodeticToEcef, type Geodetic } from "./wgs84";
 
 export function useGeoFrame(initial?: Partial<Geodetic>) {
-  const initialGeodetic: Geodetic = {
-    // Default: equator, prime meridian, sea level.
-    latRad: initial?.latRad ?? 0,
-    lonRad: initial?.lonRad ?? 0,
-    heightMeters: initial?.heightMeters ?? 0,
-  };
+  const initialGeodeticRef = useRef<Geodetic | null>(null);
+  if (!initialGeodeticRef.current) {
+    initialGeodeticRef.current = {
+      // Default: equator, prime meridian, sea level.
+      latRad: initial?.latRad ?? 0,
+      lonRad: initial?.lonRad ?? 0,
+      heightMeters: initial?.heightMeters ?? 0,
+    };
+  }
+  const initialGeodetic = initialGeodeticRef.current;
 
   const [originEcef, setOriginEcef] = useState<Vector3>(() =>
     geodeticToEcef(initialGeodetic, new Vector3()),
@@ -50,6 +54,11 @@ export function useGeoFrame(initial?: Partial<Geodetic>) {
     });
   }, []);
 
+  const reset = useCallback(() => {
+    setOriginEcef(geodeticToEcef(initialGeodetic, new Vector3()));
+    setRenderOffset(new Vector3());
+  }, [initialGeodetic]);
+
   return {
     geodetic,
     originEcef,
@@ -58,5 +67,6 @@ export function useGeoFrame(initial?: Partial<Geodetic>) {
     setGeodetic,
     setOriginEcef,
     translateRender,
+    reset,
   };
 }

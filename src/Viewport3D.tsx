@@ -1,6 +1,5 @@
 import {
   CameraControlsImpl,
-  OrthographicCamera as DreiOrthographicCamera,
   PerspectiveCamera as DreiPerspectiveCamera,
 } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
@@ -16,9 +15,7 @@ import { ViewportDebugOverlay } from "./viewport/ViewportDebugOverlay";
 import {
   AXES_OVERLAY_LENGTH,
   MAX_DISTANCE,
-  MAX_ORTHO_ZOOM,
   MIN_DISTANCE,
-  MIN_ORTHO_ZOOM,
   PAN_SPEED,
   ROTATE_SPEED,
 } from "./viewport/constants";
@@ -69,6 +66,7 @@ function Viewport3DContent() {
 
       event.preventDefault();
       event.stopPropagation();
+      geo.reset();
       rig.requestDefaultView(defaultView.id);
     };
 
@@ -76,12 +74,11 @@ function Viewport3DContent() {
     return () => {
       view.removeEventListener("keydown", onKeyDown, { capture: true });
     };
-  }, [gl, rig.requestDefaultView]);
+  }, [geo.reset, gl, rig.requestDefaultView]);
 
   return (
     <>
       <DreiPerspectiveCamera ref={rig.perspectiveCameraRef} up={[0, 0, 1]} near={0.1} far={50000} />
-      <DreiOrthographicCamera ref={rig.orthographicCameraRef} up={[0, 0, 1]} near={0.1} far={50000} />
 
       <StableCameraControls
         ref={rig.controlsRef}
@@ -110,9 +107,6 @@ function Viewport3DContent() {
         panSpeed={PAN_SPEED}
         minDistance={MIN_DISTANCE}
         maxDistance={MAX_DISTANCE}
-        minOrthoZoom={MIN_ORTHO_ZOOM}
-        maxOrthoZoom={MAX_ORTHO_ZOOM}
-        onOrbitInput={rig.handleOrbitInput}
         onRenderPan={geo.translateRender}
       />
 
@@ -120,9 +114,7 @@ function Viewport3DContent() {
       <GeoRoot frame={geo.frame} />
       <ViewportDebugOverlay
         controlsRef={rig.controlsRef}
-        projection={rig.projection}
         worldUnitsPerPixelRef={rig.worldUnitsPerPixelRef}
-        rigDebug={rig.debug}
         geo={{
           geodetic: geo.geodetic,
           originEcef: geo.originEcef,
@@ -132,9 +124,6 @@ function Viewport3DContent() {
       />
       <ViewCube
         controls={rig.controlsRef}
-        onSelectDirection={rig.enterOrthographicView}
-        onRotateAroundUp={rig.handleRotateAroundUp}
-        onOrbitInput={rig.handleOrbitInput}
         getWorldDirectionFromLocalDirection={rig.getWorldDirectionFromLocalDirection}
       />
     </>
