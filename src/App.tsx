@@ -34,7 +34,7 @@ function App() {
         className="fabric-canvas pointer-events-none absolute inset-0"
       />
 
-      <div className="pointer-events-none relative z-10 flex h-full w-full flex-col">
+      <div className="pointer-events-none relative z-10 flex h-full w-full flex-col gap-2 p-2">
         <header
           data-tauri-drag-region
           data-ui-chrome="true"
@@ -65,7 +65,7 @@ function App() {
           </div>
         </header>
 
-        <div className="flex min-h-0 min-w-0 flex-1 gap-2 p-2">
+        <div className="flex flex-1 min-h-0 min-w-0 gap-2">
           <aside
             className="pointer-events-auto min-h-0 w-72"
             data-ui-chrome="true"
