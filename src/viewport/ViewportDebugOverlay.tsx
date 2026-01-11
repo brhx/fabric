@@ -38,6 +38,7 @@ export function ViewportDebugOverlay(props: {
   enabledByDefault?: boolean;
 }) {
   const gl = useThree((state) => state.gl);
+  const size = useThree((state) => state.size);
   const fallbackCamera = useThree((state) => state.camera);
   const [enabled, setEnabled] = useState(props.enabledByDefault ?? true);
   const [layout, setLayout] = useState(() => ({ rightPx: 8, topPx: 8 }));
@@ -223,7 +224,11 @@ export function ViewportDebugOverlay(props: {
   if (!portalReady) return null;
 
   return (
-    <Html fullscreen portal={portalRef}>
+    <Html
+      fullscreen
+      portal={portalRef}
+      calculatePosition={() => [size.width / 2, size.height / 2]}
+    >
       <div
         style={{
           display: enabled ? "block" : "none",
