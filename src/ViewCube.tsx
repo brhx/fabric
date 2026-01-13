@@ -4,19 +4,23 @@ import {
   Html,
   Hud,
   PerspectiveCamera,
-  RoundedBox,
 } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { ReactNode, RefObject } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LuRotateCcw, LuRotateCw } from "react-icons/lu";
 import {
+  BufferGeometry,
+  type Camera,
   CanvasTexture,
+  Float32BufferAttribute,
   Group,
   MathUtils,
-  Mesh,
+  type Mesh,
   Quaternion,
+  Raycaster,
   PerspectiveCamera as ThreePerspectiveCamera,
+  Vector2,
   Vector3,
 } from "three";
 import { isPerspectiveCamera } from "./camera";
@@ -31,15 +35,19 @@ const VIEWCUBE_DRAG_ROTATE_SPEED = 0.0042;
 const VIEWCUBE_DRAG_THRESHOLD_PX = 3;
 
 const VIEWCUBE_CUBE_SIZE_PX = 42 * VIEWCUBE_SCALE;
-const VIEWCUBE_CUBE_RADIUS_PX = 4.4 * VIEWCUBE_SCALE;
+const VIEWCUBE_CHAMFER_PX = VIEWCUBE_CUBE_SIZE_PX * 0.2;
+const VIEWCUBE_SAFE_CHAMFER_PX = Math.min(
+  VIEWCUBE_CHAMFER_PX,
+  VIEWCUBE_CUBE_SIZE_PX * 0.24,
+);
+const VIEWCUBE_FACE_SIZE_PX =
+  VIEWCUBE_CUBE_SIZE_PX - 2 * VIEWCUBE_SAFE_CHAMFER_PX;
+const VIEWCUBE_FACE_LABEL_SIZE_PX = VIEWCUBE_FACE_SIZE_PX * 0.82;
 const VIEWCUBE_CUBE_LABEL_OFFSET_PX =
   VIEWCUBE_CUBE_SIZE_PX / 2 + 0.8 * VIEWCUBE_SCALE;
-const VIEWCUBE_HIT_BAND_PX = 8 * VIEWCUBE_SCALE;
 const VIEWCUBE_HOVER_COLOR = "#3b82f6";
 const VIEWCUBE_HOVER_OPACITY = 0.86;
-const VIEWCUBE_HOVER_BEVEL_MIN_PX = 3 * VIEWCUBE_SCALE;
-const VIEWCUBE_HOVER_FACE_OFFSET_PX = 0.32 * VIEWCUBE_SCALE;
-const VIEWCUBE_HOVER_EDGE_OFFSET_PX = 0.2 * VIEWCUBE_SCALE;
+const VIEWCUBE_HOVER_OFFSET_PX = 0.28 * VIEWCUBE_SCALE;
 
 const VIEWCUBE_AXIS_SCALE = 0.62;
 const VIEWCUBE_AXIS_LENGTH_PX = 36 * VIEWCUBE_SCALE;
@@ -83,12 +91,20 @@ const FACE_LABELS = [
 
 type ViewCubeHit = {
   kind: "face" | "edge" | "corner";
-  localDirection: [number, number, number];
-  worldDirection: [number, number, number];
+  localDirection: readonly [number, number, number];
 };
 
+type ViewCubeHitKey = `${ViewCubeHit["kind"]}:${number},${number},${number}`;
+
+function getViewCubeHitKey(
+  kind: ViewCubeHit["kind"],
+  localDirection: readonly [number, number, number],
+): ViewCubeHitKey {
+  return `${kind}:${localDirection[0]},${localDirection[1]},${localDirection[2]}`;
+}
+
 function localDirectionToWorldDirection(
-  direction: [number, number, number],
+  direction: readonly [number, number, number],
 ): [number, number, number] {
   // Local axes are rotated to match the main Z-up world:
   // local X -> world X, local Y -> world Z, local Z -> world -Y.
@@ -98,115 +114,224 @@ function localDirectionToWorldDirection(
   return [world.x, world.y, world.z];
 }
 
-function getViewCubeHitFromLocalPoint(
-  localPoint: Vector3,
-  localToWorld: (
-    direction: [number, number, number],
-  ) => [number, number, number],
-): ViewCubeHit {
-  const half = VIEWCUBE_CUBE_SIZE_PX / 2;
-  const hitThreshold = Math.max(1, VIEWCUBE_HIT_BAND_PX);
+function isSameViewCubeHit(a: ViewCubeHit | null, b: ViewCubeHit | null) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.kind === b.kind &&
+    a.localDirection[0] === b.localDirection[0] &&
+    a.localDirection[1] === b.localDirection[1] &&
+    a.localDirection[2] === b.localDirection[2]
+  );
+}
 
-  const ax = Math.abs(localPoint.x);
-  const ay = Math.abs(localPoint.y);
-  const az = Math.abs(localPoint.z);
+type ViewCubeTriangleHit = Pick<ViewCubeHit, "kind" | "localDirection">;
 
-  const sx = localPoint.x >= 0 ? 1 : -1;
-  const sy = localPoint.y >= 0 ? 1 : -1;
-  const sz = localPoint.z >= 0 ? 1 : -1;
+function getViewCubeHitFromFaceIndex(
+  faceIndex: number | null | undefined,
+  triangleHits: ViewCubeTriangleHit[],
+): ViewCubeHit | null {
+  if (faceIndex === null || faceIndex === undefined) return null;
+  const meta = triangleHits[faceIndex];
+  if (!meta) return null;
+  return { kind: meta.kind, localDirection: meta.localDirection };
+}
 
-  const corner: ViewCubeHit = {
-    kind: "corner",
-    localDirection: [sx, sy, sz],
-    worldDirection: localToWorld([sx, sy, sz]),
+function createChamferedCubeGeometry(size: number, chamfer: number) {
+  const geometry = new BufferGeometry();
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+  const triangleHits: ViewCubeTriangleHit[] = [];
+
+  const half = size / 2;
+  const safeChamfer = Math.min(Math.max(0, chamfer), half * 0.48);
+  const inset = half - safeChamfer;
+
+  const addFace = (verts: Vector3[], normal: Vector3) => {
+    const desired = normal.clone().normalize();
+    const localDirection: [number, number, number] = [
+      Math.sign(normal.x),
+      Math.sign(normal.y),
+      Math.sign(normal.z),
+    ];
+    const nonZero = localDirection.filter((value) => value !== 0).length;
+    const kind: ViewCubeHit["kind"] =
+      nonZero === 1 ? "face"
+      : nonZero === 2 ? "edge"
+      : "corner";
+    const computed = new Vector3()
+      .subVectors(verts[1], verts[0])
+      .cross(new Vector3().subVectors(verts[2], verts[0]))
+      .normalize();
+    const orientedVerts =
+      computed.dot(desired) < 0 ?
+        [verts[0], ...verts.slice(1).reverse()]
+      : verts;
+
+    const baseIndex = positions.length / 3;
+    for (const vertex of orientedVerts) {
+      positions.push(vertex.x, vertex.y, vertex.z);
+      normals.push(desired.x, desired.y, desired.z);
+    }
+
+    if (orientedVerts.length === 4) {
+      indices.push(
+        baseIndex,
+        baseIndex + 1,
+        baseIndex + 2,
+        baseIndex,
+        baseIndex + 2,
+        baseIndex + 3,
+      );
+      triangleHits.push({ kind, localDirection }, { kind, localDirection });
+    } else if (orientedVerts.length === 3) {
+      indices.push(baseIndex, baseIndex + 1, baseIndex + 2);
+      triangleHits.push({ kind, localDirection });
+    }
   };
 
-  // Classify based on the dominant axis (which face we hit), then whether we're near
-  // edges of that face for edge/corner snapping.
-  if (ax >= ay && ax >= az) {
-    const nearY = ay >= half - hitThreshold;
-    const nearZ = az >= half - hitThreshold;
-    if (nearY && nearZ) return corner;
-    if (nearY) {
-      const localDirection: [number, number, number] = [sx, sy, 0];
-      return {
-        kind: "edge",
-        localDirection,
-        worldDirection: localToWorld(localDirection),
-      };
-    }
-    if (nearZ) {
-      const localDirection: [number, number, number] = [sx, 0, sz];
-      return {
-        kind: "edge",
-        localDirection,
-        worldDirection: localToWorld(localDirection),
-      };
-    }
+  const signs = [-1, 1];
 
-    const localDirection: [number, number, number] = [sx, 0, 0];
-    return {
-      kind: "face",
-      localDirection,
-      worldDirection: localToWorld(localDirection),
-    };
+  for (const sx of signs) {
+    addFace(
+      [
+        new Vector3(sx * half, inset, inset),
+        new Vector3(sx * half, inset, -inset),
+        new Vector3(sx * half, -inset, -inset),
+        new Vector3(sx * half, -inset, inset),
+      ],
+      new Vector3(sx, 0, 0),
+    );
   }
 
-  if (ay >= ax && ay >= az) {
-    const nearX = ax >= half - hitThreshold;
-    const nearZ = az >= half - hitThreshold;
-    if (nearX && nearZ) return corner;
-    if (nearX) {
-      const localDirection: [number, number, number] = [sx, sy, 0];
-      return {
-        kind: "edge",
-        localDirection,
-        worldDirection: localToWorld(localDirection),
-      };
+  for (const sy of signs) {
+    addFace(
+      [
+        new Vector3(inset, sy * half, inset),
+        new Vector3(inset, sy * half, -inset),
+        new Vector3(-inset, sy * half, -inset),
+        new Vector3(-inset, sy * half, inset),
+      ],
+      new Vector3(0, sy, 0),
+    );
+  }
+
+  for (const sz of signs) {
+    addFace(
+      [
+        new Vector3(inset, inset, sz * half),
+        new Vector3(-inset, inset, sz * half),
+        new Vector3(-inset, -inset, sz * half),
+        new Vector3(inset, -inset, sz * half),
+      ],
+      new Vector3(0, 0, sz),
+    );
+  }
+
+  for (const sx of signs) {
+    for (const sy of signs) {
+      addFace(
+        [
+          new Vector3(sx * half, sy * inset, inset),
+          new Vector3(sx * half, sy * inset, -inset),
+          new Vector3(sx * inset, sy * half, -inset),
+          new Vector3(sx * inset, sy * half, inset),
+        ],
+        new Vector3(sx, sy, 0),
+      );
     }
-    if (nearZ) {
-      const localDirection: [number, number, number] = [0, sy, sz];
-      return {
-        kind: "edge",
-        localDirection,
-        worldDirection: localToWorld(localDirection),
-      };
+  }
+
+  for (const sx of signs) {
+    for (const sz of signs) {
+      addFace(
+        [
+          new Vector3(sx * half, inset, sz * inset),
+          new Vector3(sx * half, -inset, sz * inset),
+          new Vector3(sx * inset, -inset, sz * half),
+          new Vector3(sx * inset, inset, sz * half),
+        ],
+        new Vector3(sx, 0, sz),
+      );
     }
-
-    const localDirection: [number, number, number] = [0, sy, 0];
-    return {
-      kind: "face",
-      localDirection,
-      worldDirection: localToWorld(localDirection),
-    };
   }
 
-  const nearX = ax >= half - hitThreshold;
-  const nearY = ay >= half - hitThreshold;
-  if (nearX && nearY) return corner;
-  if (nearX) {
-    const localDirection: [number, number, number] = [sx, 0, sz];
-    return {
-      kind: "edge",
-      localDirection,
-      worldDirection: localToWorld(localDirection),
-    };
-  }
-  if (nearY) {
-    const localDirection: [number, number, number] = [0, sy, sz];
-    return {
-      kind: "edge",
-      localDirection,
-      worldDirection: localToWorld(localDirection),
-    };
+  for (const sy of signs) {
+    for (const sz of signs) {
+      addFace(
+        [
+          new Vector3(inset, sy * half, sz * inset),
+          new Vector3(-inset, sy * half, sz * inset),
+          new Vector3(-inset, sy * inset, sz * half),
+          new Vector3(inset, sy * inset, sz * half),
+        ],
+        new Vector3(0, sy, sz),
+      );
+    }
   }
 
-  const localDirection: [number, number, number] = [0, 0, sz];
-  return {
-    kind: "face",
-    localDirection,
-    worldDirection: localToWorld(localDirection),
-  };
+  for (const sx of signs) {
+    for (const sy of signs) {
+      for (const sz of signs) {
+        addFace(
+          [
+            new Vector3(sx * half, sy * inset, sz * inset),
+            new Vector3(sx * inset, sy * half, sz * inset),
+            new Vector3(sx * inset, sy * inset, sz * half),
+          ],
+          new Vector3(sx, sy, sz),
+        );
+      }
+    }
+  }
+
+  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+
+  const highlightPositionsByKey: Partial<Record<ViewCubeHitKey, number[]>> = {};
+  for (
+    let triangleIndex = 0;
+    triangleIndex < triangleHits.length;
+    triangleIndex++
+  ) {
+    const meta = triangleHits[triangleIndex];
+    const key = getViewCubeHitKey(meta.kind, meta.localDirection);
+    const dest = highlightPositionsByKey[key] ?? [];
+
+    const i0 = indices[triangleIndex * 3];
+    const i1 = indices[triangleIndex * 3 + 1];
+    const i2 = indices[triangleIndex * 3 + 2];
+    dest.push(
+      positions[i0 * 3],
+      positions[i0 * 3 + 1],
+      positions[i0 * 3 + 2],
+      positions[i1 * 3],
+      positions[i1 * 3 + 1],
+      positions[i1 * 3 + 2],
+      positions[i2 * 3],
+      positions[i2 * 3 + 1],
+      positions[i2 * 3 + 2],
+    );
+
+    highlightPositionsByKey[key] = dest;
+  }
+
+  const highlightGeometries = {} as Record<ViewCubeHitKey, BufferGeometry>;
+  for (const [key, verts] of Object.entries(highlightPositionsByKey)) {
+    if (!verts || verts.length === 0) continue;
+    const highlight = new BufferGeometry();
+    highlight.setAttribute(
+      "position",
+      new Float32BufferAttribute(new Float32Array(verts), 3),
+    );
+    highlight.computeBoundingSphere();
+    highlightGeometries[key as ViewCubeHitKey] = highlight;
+  }
+
+  return { geometry, triangleHits, highlightGeometries };
 }
 
 type ViewCubeProps = {
@@ -220,6 +345,19 @@ type ViewCubeProps = {
 };
 
 export function ViewCube(props: ViewCubeProps) {
+  const fallbackCamera = useThree((state) => state.camera);
+  return (
+    <Hud renderPriority={1}>
+      <ViewCubeHud {...props} fallbackCamera={fallbackCamera} />
+    </Hud>
+  );
+}
+
+function ViewCubeHud(
+  props: ViewCubeProps & {
+    fallbackCamera: Camera;
+  },
+) {
   const { gl, invalidate, size } = useThree();
   const [margin, setMargin] = useState<[number, number]>(() => [
     VIEWCUBE_MARGIN_RIGHT_PX + VIEWCUBE_WIDGET_WIDTH_PX / 2,
@@ -227,7 +365,6 @@ export function ViewCube(props: ViewCubeProps) {
   ]);
 
   const hudPerspectiveCameraRef = useRef<ThreePerspectiveCamera | null>(null);
-  const cubeRef = useRef<Mesh | null>(null);
   const orientationRef = useRef<Group | null>(null);
   const dragStateRef = useRef<{
     pointerId: number;
@@ -236,23 +373,104 @@ export function ViewCube(props: ViewCubeProps) {
     lastX: number;
     lastY: number;
     didDrag: boolean;
-    snapDirection: [number, number, number];
+    snapHit: ViewCubeHit | null;
   } | null>(null);
+  const pointerClientRef = useRef<{ x: number; y: number } | null>(null);
 
   const [hoverHit, setHoverHit] = useState<ViewCubeHit | null>(null);
 
-  const localToWorldDirection =
-    props.getWorldDirectionFromLocalDirection ?? localDirectionToWorldDirection;
+  const localToWorldDirection = useMemo(() => {
+    if (!props.getWorldDirectionFromLocalDirection)
+      return localDirectionToWorldDirection;
+    return (direction: readonly [number, number, number]) =>
+      props.getWorldDirectionFromLocalDirection!([
+        direction[0],
+        direction[1],
+        direction[2],
+      ]);
+  }, [props.getWorldDirectionFromLocalDirection]);
+
+  const cubeMeshRef = useRef<Mesh | null>(null);
   const scratch = useMemo(
     () => ({
       quaternion: new Quaternion(),
       worldDirection: new Vector3(),
       target: new Vector3(),
       position: new Vector3(),
-      localPoint: new Vector3(),
       nudge: new Vector3(),
+      raycaster: new Raycaster(),
+      pointerNdc: new Vector2(),
     }),
     [],
+  );
+
+  const cubeModel = useMemo(
+    () =>
+      createChamferedCubeGeometry(
+        VIEWCUBE_CUBE_SIZE_PX,
+        VIEWCUBE_SAFE_CHAMFER_PX,
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      cubeModel.geometry.dispose();
+      Object.values(cubeModel.highlightGeometries).forEach((highlight) =>
+        highlight.dispose(),
+      );
+    };
+  }, [cubeModel]);
+
+  const updateHoverHit = useCallback(
+    (nextHit: ViewCubeHit | null) => {
+      setHoverHit((current) => {
+        if (isSameViewCubeHit(current, nextHit)) return current;
+        invalidate();
+        return nextHit;
+      });
+    },
+    [invalidate],
+  );
+
+  const getCubeHitFromClientPoint = useCallback(
+    (clientX: number, clientY: number): ViewCubeHit | null => {
+      const mesh = cubeMeshRef.current;
+      const hudCamera = hudPerspectiveCameraRef.current;
+      if (!mesh || !hudCamera) return null;
+
+      const rect = gl.domElement.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      if (width <= 0 || height <= 0) return null;
+
+      if (
+        clientX < rect.left ||
+        clientX > rect.right ||
+        clientY < rect.top ||
+        clientY > rect.bottom
+      ) {
+        return null;
+      }
+
+      scratch.pointerNdc.set(
+        ((clientX - rect.left) / width) * 2 - 1,
+        -((clientY - rect.top) / height) * 2 + 1,
+      );
+
+      // Ensure matrices are up-to-date (pointer events can fire between renders).
+      mesh.updateWorldMatrix(true, false);
+      hudCamera.updateMatrixWorld();
+
+      scratch.raycaster.setFromCamera(scratch.pointerNdc, hudCamera);
+      const [intersection] = scratch.raycaster.intersectObject(mesh, false);
+
+      return getViewCubeHitFromFaceIndex(
+        intersection?.faceIndex,
+        cubeModel.triangleHits,
+      );
+    },
+    [cubeModel.triangleHits, gl, scratch],
   );
 
   useEffect(() => {
@@ -327,7 +545,8 @@ export function ViewCube(props: ViewCubeProps) {
   useFrame(({ camera }) => {
     const orientation = orientationRef.current;
     if (!orientation) return;
-    const sourceCamera = props.controls.current?.camera ?? camera;
+    const sourceCamera =
+      props.controls.current?.camera ?? props.fallbackCamera ?? camera;
     sourceCamera.getWorldQuaternion(scratch.quaternion);
     scratch.quaternion.invert();
     orientation.quaternion.copy(scratch.quaternion);
@@ -372,158 +591,266 @@ export function ViewCube(props: ViewCubeProps) {
       hudPerspective.lookAt(0, 0, 0);
       hudPerspective.updateProjectionMatrix();
     }
+
+    const drag = dragStateRef.current;
+    const pointer = pointerClientRef.current;
+    if (!drag && pointer) {
+      updateHoverHit(getCubeHitFromClientPoint(pointer.x, pointer.y));
+    }
   });
 
-  const moveCameraToWorldDirection = (worldDirection: Vector3) => {
-    const controls = props.controls.current;
-    if (!controls) return;
-
-    controls.getTarget(scratch.target);
-    controls.getPosition(scratch.position);
-
-    const radius = scratch.position.distanceTo(scratch.target);
-    if (!Number.isFinite(radius) || radius <= 0) return;
-
-    scratch.worldDirection.copy(worldDirection).normalize();
-
-    scratch.nudge.copy(scratch.position).sub(scratch.target);
-    stabilizePoleDirection({
-      direction: scratch.worldDirection,
-      up: controls.camera.up,
-      viewVector: scratch.nudge,
-      poleThreshold: 0.98,
-    });
-
-    scratch.position
-      .copy(scratch.target)
-      .addScaledVector(scratch.worldDirection, radius);
-
-    controls.setLookAt(
-      scratch.position.x,
-      scratch.position.y,
-      scratch.position.z,
-      scratch.target.x,
-      scratch.target.y,
-      scratch.target.z,
-      true,
-    );
-    controls.update(0);
-    invalidate();
-  };
-
-  const startCubeInteraction = (
-    event: any,
-    snapDirection: [number, number, number],
-  ) => {
-    event.stopPropagation();
-    event.target?.setPointerCapture?.(event.pointerId);
-
-    dragStateRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX ?? 0,
-      startY: event.clientY ?? 0,
-      lastX: event.clientX ?? 0,
-      lastY: event.clientY ?? 0,
-      didDrag: false,
-      snapDirection,
-    };
-  };
-
-  const onCubePointerMove = (event: any) => {
-    const state = dragStateRef.current;
-    if (state) {
-      if (state.pointerId !== event.pointerId) return;
-
-      event.stopPropagation();
-
-      const clientX = event.clientX ?? 0;
-      const clientY = event.clientY ?? 0;
-      const dx = clientX - state.lastX;
-      const dy = clientY - state.lastY;
-      state.lastX = clientX;
-      state.lastY = clientY;
-
-      if (!state.didDrag) {
-        const totalDx = clientX - state.startX;
-        const totalDy = clientY - state.startY;
-        if (Math.hypot(totalDx, totalDy) >= VIEWCUBE_DRAG_THRESHOLD_PX)
-          state.didDrag = true;
-      }
-
-      if (!state.didDrag) return;
-
+  const moveCameraToWorldDirection = useCallback(
+    (worldDirection: Vector3) => {
       const controls = props.controls.current;
       if (!controls) return;
 
-      const azimuth = -dx * VIEWCUBE_DRAG_ROTATE_SPEED;
-      const polar = -dy * VIEWCUBE_DRAG_ROTATE_SPEED;
-      const handled = props.onOrbitInput?.(azimuth, polar);
-      if (!handled) {
-        controls.rotate(azimuth, polar, false);
-      }
+      // Use the *current* camera state (not transition end values) so the ViewCube
+      // can smoothly retarget without snapping to a previous orbit end-state.
+      controls.getTarget(scratch.target, false);
+      controls.getPosition(scratch.position, false);
+
+      const radius = scratch.position.distanceTo(scratch.target);
+      if (!Number.isFinite(radius) || radius <= 0) return;
+
+      scratch.worldDirection.copy(worldDirection).normalize();
+
+      scratch.nudge.copy(scratch.position).sub(scratch.target);
+      stabilizePoleDirection({
+        direction: scratch.worldDirection,
+        up: controls.camera.up,
+        viewVector: scratch.nudge,
+        poleThreshold: 0.98,
+      });
+
+      scratch.position
+        .copy(scratch.target)
+        .addScaledVector(scratch.worldDirection, radius);
+
+      controls.setLookAt(
+        scratch.position.x,
+        scratch.position.y,
+        scratch.position.z,
+        scratch.target.x,
+        scratch.target.y,
+        scratch.target.z,
+        true,
+      );
+      controls.update(0);
       invalidate();
-      return;
-    }
+    },
+    [invalidate, props.controls, scratch],
+  );
 
-    const cube = cubeRef.current;
-    if (!cube) return;
+  useEffect(() => {
+    const element = gl.domElement;
+    const doc = element.ownerDocument;
+    const view = doc.defaultView;
+    if (!view) return;
+    const captureOptions = { capture: true } as const;
 
-    scratch.localPoint.copy(event.point);
-    cube.worldToLocal(scratch.localPoint);
+    const stopIfHandled = (event: PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
 
-    setHoverHit(
-      getViewCubeHitFromLocalPoint(scratch.localPoint, localToWorldDirection),
-    );
-    invalidate();
-  };
+    const isOverUiChrome = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return false;
+      return Boolean(target.closest('button[data-ui-chrome="true"]'));
+    };
 
-  const onFacePointerMove = (event: any) => {
-    const state = dragStateRef.current;
-    if (!state || state.pointerId !== event.pointerId) return;
-    onCubePointerMove(event);
-  };
+    const updatePointerClient = (event: PointerEvent) => {
+      const state = dragStateRef.current;
+      if (state && state.pointerId !== event.pointerId) return;
+      pointerClientRef.current = { x: event.clientX, y: event.clientY };
+    };
 
-  const onCubePointerUp = (event: any) => {
-    const state = dragStateRef.current;
-    dragStateRef.current = null;
-    if (!state || state.pointerId !== event.pointerId) return;
+    const clearPointerClient = () => {
+      pointerClientRef.current = null;
+    };
 
-    event.stopPropagation();
-    event.target?.releasePointerCapture?.(event.pointerId);
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      if (isOverUiChrome(event)) {
+        clearPointerClient();
+        updateHoverHit(null);
+        return;
+      }
+      updatePointerClient(event);
 
-    if (state.didDrag) return;
+      const hit = getCubeHitFromClientPoint(event.clientX, event.clientY);
+      if (!hit) return;
 
-    if (props.onSelectDirection) {
-      props.onSelectDirection(state.snapDirection);
-      return;
-    }
+      stopIfHandled(event);
+      element.setPointerCapture?.(event.pointerId);
 
-    scratch.worldDirection.set(...state.snapDirection);
-    moveCameraToWorldDirection(scratch.worldDirection);
-  };
+      dragStateRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        lastX: event.clientX,
+        lastY: event.clientY,
+        didDrag: false,
+        snapHit: hit,
+      };
 
-  const onCubePointerCancel = (event: any) => {
-    const state = dragStateRef.current;
-    dragStateRef.current = null;
-    if (!state || state.pointerId !== event.pointerId) return;
-    event.target?.releasePointerCapture?.(event.pointerId);
-  };
+      updateHoverHit(hit);
+    };
 
-  const handleCubePointerDown = (event: any) => {
-    const cube = cubeRef.current;
-    if (!cube) return;
+    const onPointerMove = (event: PointerEvent) => {
+      const state = dragStateRef.current;
+      if (state) {
+        if (state.pointerId !== event.pointerId) return;
 
-    scratch.localPoint.copy(event.point);
-    cube.worldToLocal(scratch.localPoint);
+        updatePointerClient(event);
+        stopIfHandled(event);
 
-    const hit = getViewCubeHitFromLocalPoint(
-      scratch.localPoint,
-      localToWorldDirection,
-    );
-    setHoverHit(hit);
-    startCubeInteraction(event, hit.worldDirection);
-    invalidate();
-  };
+        if (event.pointerType === "mouse" && event.buttons === 0) {
+          dragStateRef.current = null;
+          element.releasePointerCapture?.(event.pointerId);
+          updateHoverHit(null);
+          return;
+        }
+
+        const dx = event.clientX - state.lastX;
+        const dy = event.clientY - state.lastY;
+        state.lastX = event.clientX;
+        state.lastY = event.clientY;
+
+        const wasDragging = state.didDrag;
+        if (!state.didDrag) {
+          const totalDx = event.clientX - state.startX;
+          const totalDy = event.clientY - state.startY;
+          if (Math.hypot(totalDx, totalDy) >= VIEWCUBE_DRAG_THRESHOLD_PX)
+            state.didDrag = true;
+        }
+
+        if (!wasDragging && state.didDrag) updateHoverHit(null);
+
+        if (!state.didDrag) {
+          const hit = getCubeHitFromClientPoint(event.clientX, event.clientY);
+          if (hit) state.snapHit = hit;
+          updateHoverHit(hit);
+          return;
+        }
+
+        const controls = props.controls.current;
+        if (!controls) return;
+
+        const azimuth = -dx * VIEWCUBE_DRAG_ROTATE_SPEED;
+        const polar = -dy * VIEWCUBE_DRAG_ROTATE_SPEED;
+        const handled = props.onOrbitInput?.(azimuth, polar);
+        if (!handled) {
+          controls.rotate(azimuth, polar, false);
+        }
+        invalidate();
+        return;
+      }
+
+      if (isOverUiChrome(event)) {
+        clearPointerClient();
+        updateHoverHit(null);
+        return;
+      }
+
+      updatePointerClient(event);
+      const hit = getCubeHitFromClientPoint(event.clientX, event.clientY);
+      if (hit) stopIfHandled(event);
+      updateHoverHit(hit);
+    };
+
+    const onPointerUp = (event: PointerEvent) => {
+      const state = dragStateRef.current;
+      dragStateRef.current = null;
+      if (!state || state.pointerId !== event.pointerId) return;
+
+      updatePointerClient(event);
+      stopIfHandled(event);
+      element.releasePointerCapture?.(event.pointerId);
+
+      if (state.didDrag) return;
+
+      const releaseHit = getCubeHitFromClientPoint(
+        event.clientX,
+        event.clientY,
+      );
+      const snapLocal =
+        releaseHit?.localDirection ?? state.snapHit?.localDirection;
+      const snap = snapLocal ? localToWorldDirection(snapLocal) : null;
+      if (!snap) return;
+
+      if (props.onSelectDirection) {
+        props.onSelectDirection(snap);
+        return;
+      }
+
+      scratch.worldDirection.set(...snap);
+      moveCameraToWorldDirection(scratch.worldDirection);
+    };
+
+    const onPointerCancel = (event: PointerEvent) => {
+      const state = dragStateRef.current;
+      dragStateRef.current = null;
+      if (!state || state.pointerId !== event.pointerId) return;
+
+      updatePointerClient(event);
+      stopIfHandled(event);
+      element.releasePointerCapture?.(event.pointerId);
+      updateHoverHit(null);
+    };
+
+    const onLostPointerCapture = (event: PointerEvent) => {
+      const state = dragStateRef.current;
+      dragStateRef.current = null;
+      if (!state || state.pointerId !== event.pointerId) return;
+      updateHoverHit(null);
+    };
+
+    const onMouseLeave = () => {
+      if (dragStateRef.current) return;
+      clearPointerClient();
+      updateHoverHit(null);
+    };
+
+    const onBlur = () => {
+      dragStateRef.current = null;
+      clearPointerClient();
+      updateHoverHit(null);
+    };
+
+    const onVisibilityChange = () => {
+      if (doc.visibilityState !== "visible") onBlur();
+    };
+
+    doc.addEventListener("pointerdown", onPointerDown, captureOptions);
+    doc.addEventListener("pointermove", onPointerMove, captureOptions);
+    doc.addEventListener("pointerup", onPointerUp, captureOptions);
+    doc.addEventListener("pointercancel", onPointerCancel, captureOptions);
+    element.addEventListener("lostpointercapture", onLostPointerCapture);
+    element.addEventListener("mouseleave", onMouseLeave);
+    view.addEventListener("blur", onBlur);
+    doc.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      doc.removeEventListener("pointerdown", onPointerDown, captureOptions);
+      doc.removeEventListener("pointermove", onPointerMove, captureOptions);
+      doc.removeEventListener("pointerup", onPointerUp, captureOptions);
+      doc.removeEventListener("pointercancel", onPointerCancel, captureOptions);
+      element.removeEventListener("lostpointercapture", onLostPointerCapture);
+      element.removeEventListener("mouseleave", onMouseLeave);
+      view.removeEventListener("blur", onBlur);
+      doc.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [
+    getCubeHitFromClientPoint,
+    invalidate,
+    moveCameraToWorldDirection,
+    props.controls,
+    props.onOrbitInput,
+    props.onSelectDirection,
+    scratch,
+    updateHoverHit,
+  ]);
 
   const faceTextures = useMemo(() => {
     const anisotropy = gl.capabilities.getMaxAnisotropy() || 1;
@@ -591,6 +918,7 @@ export function ViewCube(props: ViewCubeProps) {
 
     return {
       x: makeTexture("X", COLOR_AXIS_X),
+      y: makeTexture("Y", COLOR_AXIS_Y),
       z: makeTexture("Z", COLOR_AXIS_Z),
     };
   }, [gl]);
@@ -603,7 +931,7 @@ export function ViewCube(props: ViewCubeProps) {
   }, [axisLabelTextures, faceTextures]);
 
   return (
-    <Hud renderPriority={1}>
+    <>
       <PerspectiveCamera
         ref={(node) => {
           hudPerspectiveCameraRef.current = node;
@@ -618,28 +946,10 @@ export function ViewCube(props: ViewCubeProps) {
       <group>
         <group ref={orientationRef}>
           <group rotation={VIEWCUBE_CONTENT_ROTATION}>
-            <RoundedBox
-              ref={(node) => {
-                cubeRef.current = node;
-              }}
-              args={[
-                VIEWCUBE_CUBE_SIZE_PX,
-                VIEWCUBE_CUBE_SIZE_PX,
-                VIEWCUBE_CUBE_SIZE_PX,
-              ]}
-              radius={VIEWCUBE_CUBE_RADIUS_PX}
-              smoothness={4}
-              bevelSegments={3}
-              creaseAngle={0.36}
-              onPointerDown={handleCubePointerDown}
-              onPointerMove={onCubePointerMove}
-              onPointerUp={onCubePointerUp}
-              onPointerCancel={onCubePointerCancel}
-              onPointerOut={() => {
-                if (dragStateRef.current) return;
-                setHoverHit(null);
-                invalidate();
-              }}
+            <mesh
+              ref={cubeMeshRef}
+              geometry={cubeModel.geometry}
+              renderOrder={1}
             >
               <meshStandardMaterial
                 color="#4a4d55"
@@ -648,10 +958,20 @@ export function ViewCube(props: ViewCubeProps) {
                 emissive="#0a0b0f"
                 emissiveIntensity={0.18}
               />
-              <Edges scale={1.006} color="#ffffff" transparent opacity={0.12} />
-            </RoundedBox>
+              <Edges
+                scale={1.006}
+                color="#ffffff"
+                transparent
+                opacity={0.12}
+                raycast={() => null}
+                renderOrder={3}
+              />
+            </mesh>
 
-            <ViewCubeHoverHighlight hit={hoverHit} />
+            <ViewCubeHoverHighlight
+              hit={hoverHit}
+              highlightGeometries={cubeModel.highlightGeometries}
+            />
 
             {FACE_LABELS.map(({ key, localNormal }) => (
               <mesh
@@ -662,46 +982,13 @@ export function ViewCube(props: ViewCubeProps) {
                   localNormal.z * VIEWCUBE_CUBE_LABEL_OFFSET_PX,
                 ]}
                 rotation={normalToPlaneRotation(localNormal)}
-                onPointerDown={(event) => {
-                  startCubeInteraction(
-                    event,
-                    localToWorldDirection([
-                      localNormal.x,
-                      localNormal.y,
-                      localNormal.z,
-                    ]),
-                  );
-                }}
-                onPointerOver={() => {
-                  const [wx, wy, wz] = localToWorldDirection([
-                    localNormal.x,
-                    localNormal.y,
-                    localNormal.z,
-                  ]);
-                  setHoverHit({
-                    kind: "face",
-                    localDirection: [
-                      localNormal.x,
-                      localNormal.y,
-                      localNormal.z,
-                    ],
-                    worldDirection: [wx, wy, wz],
-                  });
-                  invalidate();
-                }}
-                onPointerMove={onFacePointerMove}
-                onPointerUp={onCubePointerUp}
-                onPointerCancel={onCubePointerCancel}
-                onPointerOut={() => {
-                  if (dragStateRef.current) return;
-                  setHoverHit(null);
-                  invalidate();
-                }}
+                raycast={() => null}
+                renderOrder={2}
               >
                 <planeGeometry
                   args={[
-                    VIEWCUBE_CUBE_SIZE_PX * 0.78,
-                    VIEWCUBE_CUBE_SIZE_PX * 0.78,
+                    VIEWCUBE_FACE_LABEL_SIZE_PX,
+                    VIEWCUBE_FACE_LABEL_SIZE_PX,
                   ]}
                 />
                 <meshBasicMaterial
@@ -722,7 +1009,7 @@ export function ViewCube(props: ViewCubeProps) {
               />
               <AxisLine
                 direction={[0, 0, -1]}
-                length={VIEWCUBE_AXIS_LENGTH_PX * 0.62}
+                length={VIEWCUBE_AXIS_LENGTH_PX}
                 radius={VIEWCUBE_AXIS_RADIUS_PX}
                 color={COLOR_AXIS_Y}
               />
@@ -733,11 +1020,11 @@ export function ViewCube(props: ViewCubeProps) {
                 color={COLOR_AXIS_Z}
               />
 
-              <mesh raycast={() => null}>
+              <mesh raycast={() => null} renderOrder={2}>
                 <sphereGeometry
                   args={[VIEWCUBE_AXIS_SPHERE_RADIUS_PX, 16, 16]}
                 />
-                <meshBasicMaterial color={COLOR_AXIS_Y} />
+                <meshBasicMaterial color={COLOR_AXIS_Y} depthWrite={false} />
               </mesh>
 
               <AxisLabel
@@ -755,6 +1042,15 @@ export function ViewCube(props: ViewCubeProps) {
                   VIEWCUBE_AXIS_LENGTH_PX + VIEWCUBE_AXIS_LABEL_OFFSET_PX,
                   0,
                   0,
+                ]}
+                scale={VIEWCUBE_AXIS_LABEL_SCALE}
+              />
+              <AxisLabel
+                texture={axisLabelTextures.y}
+                position={[
+                  0,
+                  0,
+                  -(VIEWCUBE_AXIS_LENGTH_PX + VIEWCUBE_AXIS_LABEL_OFFSET_PX),
                 ]}
                 scale={VIEWCUBE_AXIS_LABEL_SCALE}
               />
@@ -812,7 +1108,7 @@ export function ViewCube(props: ViewCubeProps) {
       <ambientLight intensity={0.9} />
       <directionalLight position={[90, 120, 140]} intensity={0.65} />
       <directionalLight position={[-120, -80, 160]} intensity={0.35} />
-    </Hud>
+    </>
   );
 }
 
@@ -826,16 +1122,19 @@ function normalToPlaneRotation(normal: Vector3): [number, number, number] {
   return [0, Math.PI, 0];
 }
 
-function ViewCubeHoverHighlight(props: { hit: ViewCubeHit | null }) {
+function ViewCubeHoverHighlight(props: {
+  hit: ViewCubeHit | null;
+  highlightGeometries: Record<ViewCubeHitKey, BufferGeometry>;
+}) {
   const hit = props.hit;
   if (!hit) return null;
 
+  const key = getViewCubeHitKey(hit.kind, hit.localDirection);
+  const geometry = props.highlightGeometries[key];
+  if (!geometry) return null;
+
   const [lx, ly, lz] = hit.localDirection;
-  const half = VIEWCUBE_CUBE_SIZE_PX / 2;
-  const bevel = Math.max(
-    VIEWCUBE_HOVER_BEVEL_MIN_PX,
-    Math.min(VIEWCUBE_HIT_BAND_PX, half * 0.5),
-  );
+  const normal = new Vector3(lx, ly, lz).normalize();
 
   const materialProps = {
     color: VIEWCUBE_HOVER_COLOR,
@@ -849,68 +1148,17 @@ function ViewCubeHoverHighlight(props: { hit: ViewCubeHit | null }) {
     polygonOffsetUnits: -1,
   } as const;
 
-  if (hit.kind === "face") {
-    const normal = new Vector3(lx, ly, lz).normalize();
-    const position = normal
-      .clone()
-      .multiplyScalar(half + VIEWCUBE_HOVER_FACE_OFFSET_PX)
-      .toArray() as [number, number, number];
-    return (
-      <mesh
-        raycast={() => null}
-        position={position}
-        rotation={normalToPlaneRotation(normal)}
-        renderOrder={2}
-      >
-        <planeGeometry
-          args={[VIEWCUBE_CUBE_SIZE_PX * 0.96, VIEWCUBE_CUBE_SIZE_PX * 0.96]}
-        />
-        <meshBasicMaterial {...materialProps} />
-      </mesh>
-    );
-  }
-
-  if (hit.kind === "edge") {
-    const thickness = bevel * 0.72;
-    const edgeOffset = half - thickness / 2 + VIEWCUBE_HOVER_EDGE_OFFSET_PX;
-
-    const alongX = lx === 0;
-    const alongY = ly === 0;
-    const alongZ = lz === 0;
-
-    let size: [number, number, number] = [thickness, thickness, thickness];
-    let position: [number, number, number] = [0, 0, 0];
-
-    if (alongX) {
-      size = [VIEWCUBE_CUBE_SIZE_PX, thickness, thickness];
-      position = [0, ly * edgeOffset, lz * edgeOffset];
-    } else if (alongY) {
-      size = [thickness, VIEWCUBE_CUBE_SIZE_PX, thickness];
-      position = [lx * edgeOffset, 0, lz * edgeOffset];
-    } else if (alongZ) {
-      size = [thickness, thickness, VIEWCUBE_CUBE_SIZE_PX];
-      position = [lx * edgeOffset, ly * edgeOffset, 0];
-    }
-
-    return (
-      <mesh raycast={() => null} position={position} renderOrder={2}>
-        <boxGeometry args={size} />
-        <meshBasicMaterial {...materialProps} />
-      </mesh>
-    );
-  }
-
-  const cornerSize = bevel * 0.92;
-  const cornerOffset = half - cornerSize / 2 + VIEWCUBE_HOVER_EDGE_OFFSET_PX;
-  const position: [number, number, number] = [
-    lx * cornerOffset,
-    ly * cornerOffset,
-    lz * cornerOffset,
-  ];
-
+  const position = normal
+    .clone()
+    .multiplyScalar(VIEWCUBE_HOVER_OFFSET_PX)
+    .toArray() as [number, number, number];
   return (
-    <mesh raycast={() => null} position={position} renderOrder={2}>
-      <boxGeometry args={[cornerSize, cornerSize, cornerSize]} />
+    <mesh
+      raycast={() => null}
+      position={position}
+      geometry={geometry}
+      renderOrder={4}
+    >
       <meshBasicMaterial {...materialProps} />
     </mesh>
   );
@@ -939,9 +1187,14 @@ function AxisLine(props: {
   }, [props.direction, props.length]);
 
   return (
-    <mesh raycast={() => null} position={position} quaternion={quaternion}>
+    <mesh
+      raycast={() => null}
+      position={position}
+      quaternion={quaternion}
+      renderOrder={2}
+    >
       <cylinderGeometry args={[props.radius, props.radius, props.length, 10]} />
-      <meshBasicMaterial color={props.color} />
+      <meshBasicMaterial color={props.color} depthWrite={false} />
     </mesh>
   );
 }
@@ -953,11 +1206,17 @@ function AxisLabel(props: {
 }) {
   if (!props.texture) return null;
   return (
-    <sprite raycast={() => null} position={props.position} scale={props.scale}>
+    <sprite
+      raycast={() => null}
+      position={props.position}
+      scale={props.scale}
+      renderOrder={0}
+    >
       <spriteMaterial
         map={props.texture}
         transparent
         opacity={0.92}
+        depthTest
         depthWrite={false}
       />
     </sprite>
