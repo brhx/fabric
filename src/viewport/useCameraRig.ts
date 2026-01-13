@@ -73,7 +73,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       set({ camera: perspective });
       controls.camera = perspective;
 
-      controls.setLookAt(
+      void controls.setLookAt(
         scratch.position.x,
         scratch.position.y,
         scratch.position.z,

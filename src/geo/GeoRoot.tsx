@@ -9,6 +9,7 @@ export function GeoRoot(props: { frame: LocalEnuFrame; children?: ReactNode }) {
   }, [props.frame.ecefToRender]);
 
   return (
+    // Apply this group alongside any render-space offsets (e.g., renderOffset).
     <group matrixAutoUpdate={false} matrix={matrix}>
       {props.children}
     </group>

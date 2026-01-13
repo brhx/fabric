@@ -18,6 +18,8 @@ export function useGeoFrame(initial?: Partial<Geodetic>) {
   const [originEcef, setOriginEcef] = useState<Vector3>(() =>
     geodeticToEcef(initialGeodetic, new Vector3()),
   );
+  // renderOffset shifts render-space content to keep the camera near the origin
+  // while GeoRoot applies the ECEF -> render transform for ECEF-authored nodes.
   const [renderOffset, setRenderOffset] = useState<Vector3>(
     () => new Vector3(),
   );

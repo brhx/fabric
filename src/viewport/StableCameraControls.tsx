@@ -23,7 +23,7 @@ export const StableCameraControls = forwardRef<
 
   const domElement = events.connected || gl.domElement;
 
-  const controls = useMemo(() => new CameraControlsImpl(camera), []);
+  const controls = useMemo(() => new CameraControlsImpl(camera), [camera]);
 
   useEffect(() => {
     controls.camera = camera;
@@ -31,11 +31,15 @@ export const StableCameraControls = forwardRef<
 
   useEffect(() => {
     controls.connect(domElement);
-    return () => void controls.disconnect();
+    return () => {
+      controls.disconnect();
+    };
   }, [controls, domElement]);
 
   useEffect(() => {
-    return () => void controls.dispose();
+    return () => {
+      controls.dispose();
+    };
   }, [controls]);
 
   useEffect(() => {

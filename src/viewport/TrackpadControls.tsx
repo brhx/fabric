@@ -27,6 +27,17 @@ export function TrackpadControls(props: {
     out: Plane,
   ) => Plane | null;
 }) {
+  const {
+    controlsRef,
+    worldFrame,
+    rotateSpeed,
+    panSpeed,
+    minDistance,
+    maxDistance,
+    onOrbitInput,
+    onRenderPan,
+    getOrbitFallbackPlane,
+  } = props;
   const { camera, gl, invalidate, scene } = useThree();
   const lastGestureScale = useRef<number | null>(null);
   const lastOrbitAt = useRef<number | null>(null);
@@ -58,7 +69,7 @@ export function TrackpadControls(props: {
     const view = doc.defaultView;
     if (!view) return;
 
-    const getActiveCamera = () => props.controlsRef.current?.camera ?? camera;
+    const getActiveCamera = () => controlsRef.current?.camera ?? camera;
 
     const isSceneHelper = (object: Object3D | null) => {
       let current: Object3D | null = object;
@@ -97,88 +108,85 @@ export function TrackpadControls(props: {
     };
 
     const setPivotPlaneAtTarget = (target: Vector3) => {
-      props.worldFrame.setPivotPlaneAt(target, scratch.pivotPlane);
+      worldFrame.setPivotPlaneAt(target, scratch.pivotPlane);
     };
 
-	    const pickPivotAtClientPoint = (
-	      clientX: number,
-	      clientY: number,
-	      out: Vector3,
-	    ) => {
-	      const controls = props.controlsRef.current;
-	      if (controls) controls.getTarget(scratch.tmpTarget);
-	      else scratch.tmpTarget.set(0, 0, 0);
+    const pickPivotAtClientPoint = (
+      clientX: number,
+      clientY: number,
+      out: Vector3,
+    ) => {
+      const controls = controlsRef.current;
+      if (controls) controls.getTarget(scratch.tmpTarget);
+      else scratch.tmpTarget.set(0, 0, 0);
 
-	      out.copy(scratch.tmpTarget);
+      out.copy(scratch.tmpTarget);
 
-	      if (!setPointer(clientX, clientY)) return;
+      if (!setPointer(clientX, clientY)) return;
 
-	      const activeCamera = getActiveCamera();
-	      scratch.raycaster.setFromCamera(scratch.pointer, activeCamera);
+      const activeCamera = getActiveCamera();
+      scratch.raycaster.setFromCamera(scratch.pointer, activeCamera);
       const intersections = scratch.raycaster.intersectObjects(
         scene.children,
         true,
       );
-	      const intersection = intersections.find(
-	        ({ object }) => !isSceneHelper(object),
-	      );
+      const intersection = intersections.find(
+        ({ object }) => !isSceneHelper(object),
+      );
 
-	      const objectDistance =
-	        intersection && Number.isFinite(intersection.distance)
-	          ? intersection.distance
-	          : null;
+      const objectDistance =
+        intersection && Number.isFinite(intersection.distance) ?
+          intersection.distance
+        : null;
 
-	      let planeDistance: number | null = null;
-	      if (props.getOrbitFallbackPlane) {
-	        const plane = props.getOrbitFallbackPlane(
-	          {
-	            target: scratch.tmpTarget,
-	            camera: activeCamera,
-	            worldFrame: props.worldFrame,
-	          },
-	          scratch.orbitPlane,
-	        );
-	        if (
-	          plane &&
-	          scratch.raycaster.ray.intersectPlane(
-	            plane,
-	            scratch.tmpPlaneHit,
-	          )
-	        ) {
-	          planeDistance = scratch.raycaster.ray.origin.distanceTo(
-	            scratch.tmpPlaneHit,
-	          );
-	        }
-	      }
+      let planeDistance: number | null = null;
+      if (getOrbitFallbackPlane) {
+        const plane = getOrbitFallbackPlane(
+          {
+            target: scratch.tmpTarget,
+            camera: activeCamera,
+            worldFrame: worldFrame,
+          },
+          scratch.orbitPlane,
+        );
+        if (
+          plane &&
+          scratch.raycaster.ray.intersectPlane(plane, scratch.tmpPlaneHit)
+        ) {
+          planeDistance = scratch.raycaster.ray.origin.distanceTo(
+            scratch.tmpPlaneHit,
+          );
+        }
+      }
 
-	      if (
-	        objectDistance !== null &&
-	        (planeDistance === null || objectDistance <= planeDistance)
-	      ) {
-	        out.copy(intersection!.point);
-	        return;
-	      }
+      if (
+        objectDistance !== null &&
+        (planeDistance === null || objectDistance <= planeDistance)
+      ) {
+        out.copy(intersection!.point);
+        return;
+      }
 
-	      if (planeDistance !== null) {
-	        out.copy(scratch.tmpPlaneHit);
-	      }
-	    };
+      if (planeDistance !== null) {
+        out.copy(scratch.tmpPlaneHit);
+      }
+    };
 
     const orbit = (deltaX: number, deltaY: number) => {
-      const controls = props.controlsRef.current;
+      const controls = controlsRef.current;
       if (!controls) return;
 
-      const azimuth = deltaX * props.rotateSpeed;
-      const polar = deltaY * props.rotateSpeed;
-      const handled = props.onOrbitInput?.(azimuth, polar);
+      const azimuth = deltaX * rotateSpeed;
+      const polar = deltaY * rotateSpeed;
+      const handled = onOrbitInput?.(azimuth, polar);
       if (handled) return;
 
-      controls.rotate(azimuth, polar, false);
+      void controls.rotate(azimuth, polar, false);
       invalidate();
     };
 
     const pan = (deltaX: number, deltaY: number) => {
-      const controls = props.controlsRef.current;
+      const controls = controlsRef.current;
       if (!controls) return;
 
       // NOTE: If/when orthographic views return, pan must be view‑plane relative:
@@ -205,27 +213,27 @@ export function TrackpadControls(props: {
       distanceScale =
         (2 * targetDistance * Math.tan(fovInRadians / 2)) / viewportHeight;
 
-      const panX = deltaX * distanceScale * props.panSpeed;
-      const panY = deltaY * distanceScale * props.panSpeed;
+      const panX = deltaX * distanceScale * panSpeed;
+      const panY = deltaY * distanceScale * panSpeed;
 
-      const shouldRebase = Boolean(props.onRenderPan);
+      const shouldRebase = Boolean(onRenderPan);
       if (shouldRebase) {
         controls.getTarget(scratch.tmpTarget);
         scratch.tmpPivot.copy(scratch.tmpTarget);
       }
 
-      controls.truck(panX, panY, false);
+      void controls.truck(panX, panY, false);
       if (shouldRebase) {
         controls.update(0);
         controls.getTarget(scratch.tmpTarget);
         scratch.tmpDelta.copy(scratch.tmpTarget).sub(scratch.tmpPivot);
 
         if (scratch.tmpDelta.lengthSq() > 0) {
-          props.onRenderPan?.(scratch.tmpDelta);
+          onRenderPan?.(scratch.tmpDelta);
           controls.getPosition(scratch.tmpPosition);
           scratch.tmpPosition.sub(scratch.tmpDelta);
           scratch.tmpTarget.sub(scratch.tmpDelta);
-          controls.setLookAt(
+          void controls.setLookAt(
             scratch.tmpPosition.x,
             scratch.tmpPosition.y,
             scratch.tmpPosition.z,
@@ -245,7 +253,7 @@ export function TrackpadControls(props: {
       clientX: number,
       clientY: number,
     ) => {
-      const controls = props.controlsRef.current;
+      const controls = controlsRef.current;
       if (!controls) return;
 
       if (!setPointer(clientX, clientY)) return;
@@ -270,8 +278,8 @@ export function TrackpadControls(props: {
       const zoomFactor = Math.exp(deltaY * 0.001);
       const nextDistance = MathUtils.clamp(
         currentDistance * zoomFactor,
-        props.minDistance,
-        props.maxDistance,
+        minDistance,
+        maxDistance,
       );
 
       scratch.tmpOffset.normalize();
@@ -279,7 +287,7 @@ export function TrackpadControls(props: {
         .copy(scratch.tmpTarget)
         .addScaledVector(scratch.tmpOffset, nextDistance);
 
-      controls.setLookAt(
+      void controls.setLookAt(
         scratch.tmpNextPosition.x,
         scratch.tmpNextPosition.y,
         scratch.tmpNextPosition.z,
@@ -308,7 +316,7 @@ export function TrackpadControls(props: {
 
       scratch.tmpDelta.copy(scratch.tmpZoomBefore).sub(scratch.tmpZoomAfter);
 
-      controls.setLookAt(
+      void controls.setLookAt(
         scratch.tmpNextPosition.x + scratch.tmpDelta.x,
         scratch.tmpNextPosition.y + scratch.tmpDelta.y,
         scratch.tmpNextPosition.z + scratch.tmpDelta.z,
@@ -342,7 +350,7 @@ export function TrackpadControls(props: {
             event.clientY,
             scratch.tmpPivot,
           );
-          const controls = props.controlsRef.current;
+          const controls = controlsRef.current;
           if (controls) {
             controls.setOrbitPoint(
               scratch.tmpPivot.x,
@@ -411,15 +419,15 @@ export function TrackpadControls(props: {
     camera,
     gl,
     invalidate,
-    props.controlsRef,
-    props.maxDistance,
-    props.minDistance,
-    props.panSpeed,
-    props.rotateSpeed,
-    props.onOrbitInput,
-    props.onRenderPan,
-    props.getOrbitFallbackPlane,
-    props.worldFrame,
+    controlsRef,
+    maxDistance,
+    minDistance,
+    panSpeed,
+    rotateSpeed,
+    onOrbitInput,
+    onRenderPan,
+    getOrbitFallbackPlane,
+    worldFrame,
     scene,
     scratch,
   ]);

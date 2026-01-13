@@ -6,6 +6,7 @@ import {
   type Geodetic,
 } from "./wgs84";
 
+// Render space convention: +X = East, +Y = North, +Z = Up.
 export type LocalEnuFrame = {
   originEcef: Vector3;
   eastEcef: Vector3;

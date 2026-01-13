@@ -171,7 +171,7 @@ export function ViewportDebugOverlay(props: {
       if (computed.position === "static")
         parent.style.position = previousPosition;
     };
-  }, [gl]);
+  }, [gl, invalidate]);
 
   useFrame(() => {
     const pre = preRef.current;
