@@ -5,7 +5,7 @@ import {
   LuPenTool,
   LuPlus,
 } from "react-icons/lu";
-import { GlassPanel } from "../ui/GlassPanel";
+import { GlassPanel } from "../ui/glass-panel";
 
 export function LeftItemsPanel() {
   return (

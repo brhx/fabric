@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Color, Vector3 } from "three";
-import type { LocalEnuFrame } from "./localFrame";
+import type { LocalEnuFrame } from "./local-frame";
 
 export function GeoFrameDebug(props: {
   frame: LocalEnuFrame;

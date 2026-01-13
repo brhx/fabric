@@ -3,7 +3,7 @@ import { Hud } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import type { RefObject } from "react";
 import type { Camera } from "three";
-import { ViewCubeHud } from "./ViewCubeHud";
+import { ViewCubeHud } from "./view-cube-hud";
 
 export type ViewCubeProps = {
   controls: RefObject<CameraControlsImpl | null>;

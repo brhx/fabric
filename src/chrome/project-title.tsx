@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useMeasuredInputWidth } from "./useMeasuredInputWidth";
+import { useMeasuredInputWidth } from "./use-measured-input-width";
 
 export function ProjectTitle(props: {
   projectName: string;

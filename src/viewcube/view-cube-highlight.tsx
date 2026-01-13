@@ -8,8 +8,8 @@ import {
   getViewCubeHitKey,
   type ViewCubeHit,
   type ViewCubeHitKey,
-} from "./hitTest";
-import { vector3ToTuple } from "./vectorUtils";
+} from "./hit-test";
+import { vector3ToTuple } from "./vector-utils";
 
 export function ViewCubeHoverHighlight(props: {
   hit: ViewCubeHit | null;

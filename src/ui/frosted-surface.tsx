@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { Panel } from "./Panel";
+import { Panel } from "./panel";
 
-export { DEFAULT_FROSTED_BG_CLASS } from "./Panel";
+export { DEFAULT_FROSTED_BG_CLASS } from "./panel";
 
 export function FrostedSurface(props: {
   className?: string;

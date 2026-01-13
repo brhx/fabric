@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useMemo } from "react";
-import type { LocalEnuFrame } from "./localFrame";
+import type { LocalEnuFrame } from "./local-frame";
 
 export function GeoRoot(props: { frame: LocalEnuFrame; children?: ReactNode }) {
   const matrix = useMemo(() => {

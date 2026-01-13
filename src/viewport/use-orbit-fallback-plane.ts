@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { Plane } from "three";
 import { Vector3 } from "three";
-import type { OrbitFallbackPlaneContext } from "./TrackpadControls";
+import type { OrbitFallbackPlaneContext } from "./trackpad-controls";
 
 const Z_UP = new Vector3(0, 0, 1);
 

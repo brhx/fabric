@@ -1,4 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "unicorn", "typescript", "oxc"]
+  "plugins": ["react", "unicorn", "typescript", "oxc"],
+  "rules": {
+    "unicorn/filename-case": ["error", { "case": "kebabCase" }]
+  }
 }

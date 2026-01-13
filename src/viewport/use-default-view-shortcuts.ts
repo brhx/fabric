@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { matchDefaultViewShortcut, type DefaultViewId } from "./defaultViews";
+import { matchDefaultViewShortcut, type DefaultViewId } from "./default-views";
 
 export function useDefaultViewShortcuts(options: {
   element: HTMLCanvasElement | null;

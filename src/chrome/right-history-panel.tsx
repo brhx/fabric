@@ -1,5 +1,5 @@
 import { LuChevronDown, LuChevronRight, LuPenTool } from "react-icons/lu";
-import { GlassPanel } from "../ui/GlassPanel";
+import { GlassPanel } from "../ui/glass-panel";
 
 export function RightHistoryPanel() {
   return (

@@ -4,4 +4,4 @@ export {
   VIEWCUBE_WIDGET_HEIGHT_PX,
   VIEWCUBE_WIDGET_WIDTH_PX,
 } from "./viewcube/constants";
-export { ViewCube } from "./viewcube/ViewCube";
+export { ViewCube } from "./viewcube/view-cube";

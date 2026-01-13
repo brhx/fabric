@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { CanvasTexture, Quaternion, Vector3 } from "three";
-import { vector3ToTuple } from "./vectorUtils";
+import { vector3ToTuple } from "./vector-utils";
 
 export function AxisLine(props: {
   direction: [number, number, number];

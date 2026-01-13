@@ -4,7 +4,7 @@ import {
   type ViewCubeHit,
   type ViewCubeHitKey,
   type ViewCubeTriangleHit,
-} from "./hitTest";
+} from "./hit-test";
 
 export function createChamferedCubeGeometry(size: number, chamfer: number) {
   const geometry = new BufferGeometry();

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { createContext, useContext, useMemo } from "react";
-import { FrostedSurface } from "../ui/FrostedSurface";
+import { FrostedSurface } from "../ui/frosted-surface";
 
 type ToolbarContextValue = {
   showLabelsOnHover: boolean;

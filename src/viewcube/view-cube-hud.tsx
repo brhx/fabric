@@ -14,8 +14,8 @@ import {
   Vector3,
 } from "three";
 import { isPerspectiveCamera } from "../camera";
-import { stabilizePoleDirection } from "../viewport/poleNudge";
-import { AxisLabel, AxisLine } from "./Axes";
+import { stabilizePoleDirection } from "../viewport/pole-nudge";
+import { AxisLabel, AxisLine } from "./axes";
 import {
   COLOR_AXIS_X,
   COLOR_AXIS_Y,
@@ -44,17 +44,17 @@ import {
   isSameViewCubeHit,
   localDirectionToWorldDirection,
   type ViewCubeHit,
-} from "./hitTest";
+} from "./hit-test";
 import { useAxisLabelTextures, useFaceLabelTextures } from "./textures";
-import { useViewCubeMargins } from "./useViewCubeMargins";
+import { useViewCubeMargins } from "./use-view-cube-margins";
 import {
   useViewCubePointerEvents,
   type ViewCubeDragState,
-} from "./useViewCubePointerEvents";
-import { vector3ToTuple } from "./vectorUtils";
-import type { ViewCubeProps } from "./ViewCube";
-import { ViewCubeButton } from "./ViewCubeButton";
-import { ViewCubeHoverHighlight } from "./ViewCubeHighlight";
+} from "./use-view-cube-pointer-events";
+import { vector3ToTuple } from "./vector-utils";
+import type { ViewCubeProps } from "./view-cube";
+import { ViewCubeButton } from "./view-cube-button";
+import { ViewCubeHoverHighlight } from "./view-cube-highlight";
 
 export function ViewCubeHud(
   props: ViewCubeProps & {

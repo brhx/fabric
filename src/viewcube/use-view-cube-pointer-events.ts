@@ -6,8 +6,8 @@ import {
   VIEWCUBE_DRAG_ROTATE_SPEED,
   VIEWCUBE_DRAG_THRESHOLD_PX,
 } from "./constants";
-import type { ViewCubeHit } from "./hitTest";
-import { tupleToVector3 } from "./vectorUtils";
+import type { ViewCubeHit } from "./hit-test";
+import { tupleToVector3 } from "./vector-utils";
 
 export type ViewCubeDragState = {
   pointerId: number;

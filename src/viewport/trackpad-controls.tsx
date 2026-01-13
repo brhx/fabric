@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { Camera } from "three";
 import { MathUtils, Object3D, Plane, Raycaster, Vector2, Vector3 } from "three";
 import { isPerspectiveCamera } from "../camera";
-import type { WorldFrame } from "./worldFrame";
+import type { WorldFrame } from "./world-frame";
 
 export type OrbitFallbackPlaneContext = {
   target: Vector3;

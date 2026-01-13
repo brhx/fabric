@@ -3,8 +3,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { PointerEvent } from "react";
 import { useRef } from "react";
 import { LuCircleHelp, LuCloud, LuHouse } from "react-icons/lu";
-import { IconButton } from "../ui/IconButton";
-import { ProjectTitle } from "./ProjectTitle";
+import { IconButton } from "../ui/icon-button";
+import { ProjectTitle } from "./project-title";
 
 const TITLEBAR_DRAG_THRESHOLD_PX = 6;
 

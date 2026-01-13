@@ -3,14 +3,14 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useMemo, useRef } from "react";
 import { PerspectiveCamera, Vector3 } from "three";
 import { isPerspectiveCamera } from "../camera";
-import { viewHeightForPerspective } from "./cameraMath";
+import { viewHeightForPerspective } from "./camera-math";
 import { DEFAULT_PERSPECTIVE_FOV_DEG } from "./constants";
 import {
   DEFAULT_VIEW_ID,
   getDefaultView,
   type DefaultViewId,
-} from "./defaultViews";
-import { ZUpFrame, type ViewBasis, type WorldFrame } from "./worldFrame";
+} from "./default-views";
+import { ZUpFrame, type ViewBasis, type WorldFrame } from "./world-frame";
 
 export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
   const worldFrame = options?.worldFrame ?? ZUpFrame;

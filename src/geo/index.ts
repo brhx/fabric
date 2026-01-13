@@ -12,5 +12,5 @@ export {
   ecefDirToRender,
   ecefPointToRender,
   renderPointToEcef,
-} from "./localFrame";
-export type { LocalEnuFrame as GeoFrame } from "./localFrame";
+} from "./local-frame";
+export type { LocalEnuFrame as GeoFrame } from "./local-frame";

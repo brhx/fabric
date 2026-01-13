@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Vector3 } from "three";
-import { createLocalEnuFrameAtEcef, type LocalEnuFrame } from "./localFrame";
+import { createLocalEnuFrameAtEcef, type LocalEnuFrame } from "./local-frame";
 import { ecefToGeodetic, geodeticToEcef, type Geodetic } from "./wgs84";
 
 export function useGeoFrame(initial?: Partial<Geodetic>) {

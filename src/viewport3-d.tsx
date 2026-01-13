@@ -3,22 +3,22 @@ import {
   PerspectiveCamera as DreiPerspectiveCamera,
 } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
-import { ViewCube } from "./ViewCube";
-import { GeoRoot } from "./geo/GeoRoot";
-import { useGeoFrame } from "./geo/useGeoFrame";
-import { MainScene } from "./viewport/SceneHelpers";
-import { StableCameraControls } from "./viewport/StableCameraControls";
-import { TrackpadControls } from "./viewport/TrackpadControls";
-import { ViewportDebugOverlay } from "./viewport/ViewportDebugOverlay";
+import { ViewCube } from "./view-cube";
+import { GeoRoot } from "./geo/geo-root";
+import { useGeoFrame } from "./geo/use-geo-frame";
+import { MainScene } from "./viewport/scene-helpers";
+import { StableCameraControls } from "./viewport/stable-camera-controls";
+import { TrackpadControls } from "./viewport/trackpad-controls";
+import { ViewportDebugOverlay } from "./viewport/viewport-debug-overlay";
 import {
   MAX_DISTANCE,
   MIN_DISTANCE,
   PAN_SPEED,
   ROTATE_SPEED,
 } from "./viewport/constants";
-import { useCameraRig } from "./viewport/useCameraRig";
-import { useDefaultViewShortcuts } from "./viewport/useDefaultViewShortcuts";
-import { useOrbitFallbackPlane } from "./viewport/useOrbitFallbackPlane";
+import { useCameraRig } from "./viewport/use-camera-rig";
+import { useDefaultViewShortcuts } from "./viewport/use-default-view-shortcuts";
+import { useOrbitFallbackPlane } from "./viewport/use-orbit-fallback-plane";
 
 export function Viewport3D(props: { className?: string }) {
   return (
