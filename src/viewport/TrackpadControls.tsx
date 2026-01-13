@@ -2,9 +2,16 @@ import type { CameraControlsImpl } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import type { RefObject } from "react";
 import { useEffect, useMemo, useRef } from "react";
+import type { Camera } from "three";
 import { MathUtils, Object3D, Plane, Raycaster, Vector2, Vector3 } from "three";
 import { isPerspectiveCamera } from "../camera";
 import type { WorldFrame } from "./worldFrame";
+
+export type OrbitFallbackPlaneContext = {
+  target: Vector3;
+  camera: Camera;
+  worldFrame: WorldFrame;
+};
 
 export function TrackpadControls(props: {
   controlsRef: RefObject<CameraControlsImpl | null>;
@@ -15,6 +22,10 @@ export function TrackpadControls(props: {
   maxDistance: number;
   onOrbitInput?: (azimuthRadians: number, polarRadians: number) => boolean;
   onRenderPan?: (deltaRender: Vector3) => void;
+  getOrbitFallbackPlane?: (
+    ctx: OrbitFallbackPlaneContext,
+    out: Plane,
+  ) => Plane | null;
 }) {
   const { camera, gl, invalidate, scene } = useThree();
   const lastGestureScale = useRef<number | null>(null);
@@ -25,6 +36,7 @@ export function TrackpadControls(props: {
       raycaster: new Raycaster(),
       pointer: new Vector2(),
       pivotPlane: new Plane(),
+      orbitPlane: new Plane(),
       viewPlane: new Plane(),
       tmpTarget: new Vector3(),
       tmpPosition: new Vector3(),
@@ -35,6 +47,7 @@ export function TrackpadControls(props: {
       tmpZoomAfter: new Vector3(),
       tmpNextPosition: new Vector3(),
       tmpDelta: new Vector3(),
+      tmpPlaneHit: new Vector3(),
     }),
     [],
   );
@@ -87,61 +100,69 @@ export function TrackpadControls(props: {
       props.worldFrame.setPivotPlaneAt(target, scratch.pivotPlane);
     };
 
-    const pickPivotAtClientPoint = (
-      clientX: number,
-      clientY: number,
-      out: Vector3,
-    ) => {
-      const controls = props.controlsRef.current;
-      if (controls) controls.getTarget(out);
-      else out.set(0, 0, 0);
+	    const pickPivotAtClientPoint = (
+	      clientX: number,
+	      clientY: number,
+	      out: Vector3,
+	    ) => {
+	      const controls = props.controlsRef.current;
+	      if (controls) controls.getTarget(scratch.tmpTarget);
+	      else scratch.tmpTarget.set(0, 0, 0);
 
-      setPivotPlaneAtTarget(out);
+	      out.copy(scratch.tmpTarget);
 
-      if (!setPointer(clientX, clientY)) return;
+	      if (!setPointer(clientX, clientY)) return;
 
-      const activeCamera = getActiveCamera();
-      scratch.raycaster.setFromCamera(scratch.pointer, activeCamera);
+	      const activeCamera = getActiveCamera();
+	      scratch.raycaster.setFromCamera(scratch.pointer, activeCamera);
       const intersections = scratch.raycaster.intersectObjects(
         scene.children,
         true,
       );
-      const intersection = intersections.find(
-        ({ object }) => !isSceneHelper(object),
-      );
+	      const intersection = intersections.find(
+	        ({ object }) => !isSceneHelper(object),
+	      );
 
-      if (intersection) {
-        out.copy(intersection.point);
-        return;
-      }
+	      const objectDistance =
+	        intersection && Number.isFinite(intersection.distance)
+	          ? intersection.distance
+	          : null;
 
-      activeCamera.getWorldDirection(scratch.tmpViewNormal).normalize();
-      const gridFacing =
-        Math.abs(scratch.tmpViewNormal.dot(scratch.pivotPlane.normal)) >= 0.12;
-      if (
-        gridFacing &&
-        scratch.raycaster.ray.intersectPlane(
-          scratch.pivotPlane,
-          scratch.tmpPivot,
-        )
-      ) {
-        out.copy(scratch.tmpPivot);
-        return;
-      }
+	      let planeDistance: number | null = null;
+	      if (props.getOrbitFallbackPlane) {
+	        const plane = props.getOrbitFallbackPlane(
+	          {
+	            target: scratch.tmpTarget,
+	            camera: activeCamera,
+	            worldFrame: props.worldFrame,
+	          },
+	          scratch.orbitPlane,
+	        );
+	        if (
+	          plane &&
+	          scratch.raycaster.ray.intersectPlane(
+	            plane,
+	            scratch.tmpPlaneHit,
+	          )
+	        ) {
+	          planeDistance = scratch.raycaster.ray.origin.distanceTo(
+	            scratch.tmpPlaneHit,
+	          );
+	        }
+	      }
 
-      scratch.viewPlane.setFromNormalAndCoplanarPoint(
-        scratch.tmpViewNormal,
-        out,
-      );
-      if (
-        scratch.raycaster.ray.intersectPlane(
-          scratch.viewPlane,
-          scratch.tmpPivot,
-        )
-      ) {
-        out.copy(scratch.tmpPivot);
-      }
-    };
+	      if (
+	        objectDistance !== null &&
+	        (planeDistance === null || objectDistance <= planeDistance)
+	      ) {
+	        out.copy(intersection!.point);
+	        return;
+	      }
+
+	      if (planeDistance !== null) {
+	        out.copy(scratch.tmpPlaneHit);
+	      }
+	    };
 
     const orbit = (deltaX: number, deltaY: number) => {
       const controls = props.controlsRef.current;
@@ -397,6 +418,7 @@ export function TrackpadControls(props: {
     props.rotateSpeed,
     props.onOrbitInput,
     props.onRenderPan,
+    props.getOrbitFallbackPlane,
     props.worldFrame,
     scene,
     scratch,

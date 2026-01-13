@@ -3,14 +3,17 @@ import {
   PerspectiveCamera as DreiPerspectiveCamera,
 } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
-import { useEffect, useRef } from "react";
-import type { Vector3 } from "three";
-import { AxesHelper, LineBasicMaterial } from "three";
+import { useCallback, useEffect, useRef } from "react";
+import type { Plane } from "three";
+import { AxesHelper, LineBasicMaterial, Vector3 } from "three";
 import { ViewCube } from "./ViewCube";
 import { GeoRoot } from "./geo/GeoRoot";
 import { useGeoFrame } from "./geo/useGeoFrame";
 import { StableCameraControls } from "./viewport/StableCameraControls";
-import { TrackpadControls } from "./viewport/TrackpadControls";
+import {
+  type OrbitFallbackPlaneContext,
+  TrackpadControls,
+} from "./viewport/TrackpadControls";
 import { ViewportDebugOverlay } from "./viewport/ViewportDebugOverlay";
 import {
   AXES_OVERLAY_LENGTH,
@@ -21,6 +24,8 @@ import {
 } from "./viewport/constants";
 import { matchDefaultViewShortcut } from "./viewport/defaultViews";
 import { useCameraRig } from "./viewport/useCameraRig";
+
+const Z_UP = new Vector3(0, 0, 1);
 
 export function Viewport3D(props: { className?: string }) {
   return (
@@ -50,6 +55,19 @@ function Viewport3DContent() {
   const gl = useThree((state) => state.gl);
   const rig = useCameraRig();
   const geo = useGeoFrame();
+  const renderOffsetRef = useRef<Vector3>(geo.renderOffset);
+
+  useEffect(() => {
+    renderOffsetRef.current = geo.renderOffset;
+  }, [geo.renderOffset]);
+
+  const getOrbitFallbackPlane = useCallback(
+    (_ctx: OrbitFallbackPlaneContext, out: Plane) => {
+      out.setFromNormalAndCoplanarPoint(Z_UP, renderOffsetRef.current);
+      return out;
+    },
+    [],
+  );
 
   useEffect(() => {
     const element = gl.domElement;
@@ -111,15 +129,16 @@ function Viewport3DContent() {
         }}
       />
 
-      <TrackpadControls
-        controlsRef={rig.controlsRef}
-        worldFrame={rig.worldFrame}
-        rotateSpeed={ROTATE_SPEED}
-        panSpeed={PAN_SPEED}
-        minDistance={MIN_DISTANCE}
-        maxDistance={MAX_DISTANCE}
-        onRenderPan={geo.translateRender}
-      />
+	      <TrackpadControls
+	        controlsRef={rig.controlsRef}
+	        worldFrame={rig.worldFrame}
+	        rotateSpeed={ROTATE_SPEED}
+	        panSpeed={PAN_SPEED}
+	        minDistance={MIN_DISTANCE}
+	        maxDistance={MAX_DISTANCE}
+	        onRenderPan={geo.translateRender}
+	        getOrbitFallbackPlane={getOrbitFallbackPlane}
+	      />
 
       <MainScene renderOffset={geo.renderOffset} />
       <GeoRoot frame={geo.frame} />
@@ -132,6 +151,7 @@ function Viewport3DContent() {
           renderOffset: geo.renderOffset,
           frame: geo.frame,
         }}
+        enabledByDefault={false}
       />
       <ViewCube
         controls={rig.controlsRef}

@@ -38,6 +38,7 @@ export function ViewportDebugOverlay(props: {
   enabledByDefault?: boolean;
 }) {
   const gl = useThree((state) => state.gl);
+  const invalidate = useThree((state) => state.invalidate);
   const size = useThree((state) => state.size);
   const fallbackCamera = useThree((state) => state.camera);
   const [enabled, setEnabled] = useState(props.enabledByDefault ?? true);
@@ -148,7 +149,11 @@ export function ViewportDebugOverlay(props: {
       if (event.key !== "d" && event.key !== "D") return;
       if (isEditableTarget(event.target)) return;
       event.preventDefault();
-      setEnabled((prev) => !prev);
+      setEnabled((prev) => {
+        const next = !prev;
+        if (next) invalidate();
+        return next;
+      });
     };
 
     view.addEventListener("keydown", onKeyDown, { capture: true });
