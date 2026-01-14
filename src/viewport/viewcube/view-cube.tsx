@@ -472,9 +472,12 @@ function ViewCubeHud(
             onClick={() => {
               const controls = props.controls.current;
               if (!controls) return;
+              controls.stop();
               const handled = props.onRotateAroundUp?.(Math.PI / 2);
               if (handled) return;
               void controls.rotate(Math.PI / 2, 0, true);
+              controls.update(0);
+              invalidate();
             }}
           >
             <LuRotateCcw size={VIEWCUBE_BUTTON_ICON_SIZE_PX} />
@@ -495,9 +498,12 @@ function ViewCubeHud(
             onClick={() => {
               const controls = props.controls.current;
               if (!controls) return;
+              controls.stop();
               const handled = props.onRotateAroundUp?.(-Math.PI / 2);
               if (handled) return;
               void controls.rotate(-Math.PI / 2, 0, true);
+              controls.update(0);
+              invalidate();
             }}
           >
             <LuRotateCw size={VIEWCUBE_BUTTON_ICON_SIZE_PX} />
@@ -678,6 +684,22 @@ function useViewCubeMargins(
 
     let frame: number | null = null;
 
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? null : (
+        new ResizeObserver(() => {
+          schedule();
+        })
+      );
+
+    let observedViewport: HTMLElement | null = null;
+    const syncViewportObserver = (viewportElement: HTMLElement | null) => {
+      if (!resizeObserver) return;
+      if (viewportElement === observedViewport) return;
+      if (observedViewport) resizeObserver.unobserve(observedViewport);
+      if (viewportElement) resizeObserver.observe(viewportElement);
+      observedViewport = viewportElement;
+    };
+
     const update = () => {
       frame = null;
 
@@ -685,6 +707,7 @@ function useViewCubeMargins(
       const viewportElement = doc.querySelector(
         '[data-viewport-area="true"]',
       ) as HTMLElement | null;
+      syncViewportObserver(viewportElement);
       const viewportRect =
         viewportElement?.getBoundingClientRect() ?? canvasRect;
 
@@ -717,19 +740,6 @@ function useViewCubeMargins(
 
     view.addEventListener("resize", schedule);
     view.addEventListener("scroll", schedule, { passive: true, capture: true });
-
-    const resizeObserver =
-      typeof ResizeObserver === "undefined" ? null : (
-        new ResizeObserver(() => {
-          schedule();
-        })
-      );
-
-    const viewportElement = doc.querySelector(
-      '[data-viewport-area="true"]',
-    ) as HTMLElement | null;
-    if (resizeObserver && viewportElement)
-      resizeObserver.observe(viewportElement);
 
     return () => {
       if (frame !== null) view.cancelAnimationFrame(frame);
