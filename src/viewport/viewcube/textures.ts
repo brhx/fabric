@@ -23,8 +23,6 @@ export function useFaceLabelTextures(gl: WebGLRenderer) {
       ctx.font =
         "600 56px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace";
       ctx.fillStyle = "rgba(255,255,255,0.92)";
-      ctx.shadowColor = "rgba(0,0,0,0.55)";
-      ctx.shadowBlur = 10;
       ctx.fillText(label, canvas.width / 2, canvas.height / 2);
 
       const texture = new CanvasTexture(canvas);
@@ -63,8 +61,6 @@ export function useAxisLabelTextures(gl: WebGLRenderer) {
       ctx.font =
         "800 72px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
       ctx.fillStyle = color;
-      ctx.shadowColor = "rgba(0,0,0,0.5)";
-      ctx.shadowBlur = 8;
       ctx.fillText(label, canvas.width / 2, canvas.height / 2);
 
       const texture = new CanvasTexture(canvas);

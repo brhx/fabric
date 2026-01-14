@@ -37,7 +37,7 @@ export function Toolbar(props: {
         <Panel
           variant="frosted"
           radiusClassName="rounded-xl"
-          className="border border-white/10 p-0.5 shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
+          className="border border-white/10 p-0.5"
         >
           <div className="flex flex-col">{props.children}</div>
         </Panel>
@@ -84,7 +84,7 @@ export function ToolbarButton(props: {
           <Panel
             variant="frosted"
             radiusClassName="rounded-lg"
-            className="flex h-8 items-center gap-2 border border-white/10 px-3.5 text-[13px] leading-none font-semibold whitespace-nowrap text-white/90 shadow-[0_10px_22px_rgba(0,0,0,0.38)]"
+            className="flex h-8 items-center gap-2 border border-white/10 px-3.5 text-[13px] leading-none font-semibold whitespace-nowrap text-white/90"
           >
             <span className="whitespace-nowrap">{props.label}</span>
             {props.shortcut ?

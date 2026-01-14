@@ -48,7 +48,7 @@ export function Panel(props: PanelProps) {
   return (
     <div
       className={[
-        "relative overflow-hidden rounded-xl border border-white/10 bg-black/25 bg-clip-padding shadow-[0_24px_70px_rgba(0,0,0,0.45)] backdrop-blur-xl",
+        "relative overflow-hidden rounded-xl border border-white/10 bg-black/25 bg-clip-padding backdrop-blur-xl",
         props.className,
       ]
         .filter(Boolean)
