@@ -37,6 +37,7 @@ export function ProjectTitle(props: {
     measureText,
     props.isEditing,
   );
+  const caretGutterPx = 2;
 
   const commit = () => {
     const next = draftName.trim() || "Untitled Project";
@@ -74,7 +75,7 @@ export function ProjectTitle(props: {
               placeholder="Untitled Project"
               style={
                 widthPx !== undefined ?
-                  { width: Math.ceil(widthPx) }
+                  { width: Math.ceil(widthPx) + caretGutterPx }
                 : undefined
               }
               onChange={(event) => setDraftName(event.target.value)}
