@@ -1,6 +1,6 @@
 import { useState } from "react";
 import "./app.css";
-import { Viewport3D } from "./viewport3-d";
+import { Keycap } from "./chrome/keycap";
 import { LeftItemsPanel } from "./chrome/left-items-panel";
 import { RightHistoryPanel } from "./chrome/right-history-panel";
 import { TitleBar } from "./chrome/title-bar";
@@ -10,7 +10,7 @@ import {
   RIGHT_TOOLBAR_GROUPS,
   TOOLBAR_ICON_CLASSNAME,
 } from "./chrome/toolbar-config";
-import { Keycap } from "./ui/keycap";
+import { Viewport3D } from "./viewport3-d";
 
 function ShortcutKeycaps(props: { keys: readonly string[] }) {
   return (

@@ -3,22 +3,22 @@ import {
   PerspectiveCamera as DreiPerspectiveCamera,
 } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
-import { ViewCube } from "./view-cube";
-import { GeoRoot } from "./geo/geo-root";
-import { useGeoFrame } from "./geo/use-geo-frame";
-import { MainScene } from "./viewport/scene-helpers";
-import { StableCameraControls } from "./viewport/stable-camera-controls";
-import { TrackpadControls } from "./viewport/trackpad-controls";
-import { ViewportDebugOverlay } from "./viewport/viewport-debug-overlay";
 import {
   MAX_DISTANCE,
   MIN_DISTANCE,
   PAN_SPEED,
   ROTATE_SPEED,
 } from "./viewport/constants";
+import { GeoRoot } from "./viewport/geo/geo-root";
+import { useGeoFrame } from "./viewport/geo/use-geo-frame";
+import { MainScene } from "./viewport/scene-helpers";
+import { StableCameraControls } from "./viewport/stable-camera-controls";
+import { TrackpadControls } from "./viewport/trackpad-controls";
 import { useCameraRig } from "./viewport/use-camera-rig";
 import { useDefaultViewShortcuts } from "./viewport/use-default-view-shortcuts";
 import { useOrbitFallbackPlane } from "./viewport/use-orbit-fallback-plane";
+import { ViewCube } from "./viewport/viewcube/view-cube";
+import { ViewportDebugOverlay } from "./viewport/viewport-debug-overlay";
 
 export function Viewport3D(props: { className?: string }) {
   return (

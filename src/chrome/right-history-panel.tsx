@@ -1,10 +1,10 @@
 import { LuChevronDown, LuChevronRight, LuPenTool } from "react-icons/lu";
-import { GlassPanel } from "../ui/glass-panel";
+import { Panel } from "./panel";
 
 export function RightHistoryPanel() {
   return (
     <aside className="pointer-events-auto min-h-0 w-80" data-ui-chrome="true">
-      <GlassPanel className="flex h-full flex-col">
+      <Panel variant="glass" className="flex h-full flex-col">
         <div className="flex items-center justify-between px-4 pt-4">
           <div className="text-xs font-semibold tracking-wide text-white/65">
             History
@@ -31,7 +31,7 @@ export function RightHistoryPanel() {
             <LuChevronRight className="h-4 w-4 text-white/45" />
           </button>
         </div>
-      </GlassPanel>
+      </Panel>
     </aside>
   );
 }

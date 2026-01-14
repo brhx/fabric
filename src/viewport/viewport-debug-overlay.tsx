@@ -5,13 +5,13 @@ import type { MutableRefObject, RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Vector3 } from "three";
 import { isPerspectiveCamera } from "../camera";
-import type { LocalEnuFrame } from "../geo/local-frame";
-import type { Geodetic } from "../geo/wgs84";
+import type { LocalEnuFrame } from "./geo/local-frame";
+import type { Geodetic } from "./geo/wgs84";
 import {
   VIEWCUBE_MARGIN_RIGHT_PX,
   VIEWCUBE_MARGIN_TOP_PX,
   VIEWCUBE_WIDGET_WIDTH_PX,
-} from "../view-cube";
+} from "./viewcube/constants";
 
 function formatNumber(value: number, decimals: number) {
   if (!Number.isFinite(value)) return "NaN";

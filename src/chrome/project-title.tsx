@@ -1,5 +1,18 @@
-import { useEffect, useRef, useState } from "react";
-import { useMeasuredInputWidth } from "./use-measured-input-width";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+
+function useMeasuredInputWidth(text: string, enabled: boolean) {
+  const measureRef = useRef<HTMLSpanElement | null>(null);
+  const [widthPx, setWidthPx] = useState<number | undefined>(undefined);
+
+  useLayoutEffect(() => {
+    if (!enabled) return;
+    const el = measureRef.current;
+    if (!el) return;
+    setWidthPx(el.offsetWidth);
+  }, [enabled, text]);
+
+  return { widthPx, measureRef };
+}
 
 export function ProjectTitle(props: {
   projectName: string;

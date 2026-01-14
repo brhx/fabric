@@ -5,12 +5,12 @@ import {
   LuPenTool,
   LuPlus,
 } from "react-icons/lu";
-import { GlassPanel } from "../ui/glass-panel";
+import { Panel } from "./panel";
 
 export function LeftItemsPanel() {
   return (
     <aside className="pointer-events-auto min-h-0 w-72" data-ui-chrome="true">
-      <GlassPanel className="flex h-full flex-col">
+      <Panel variant="glass" className="flex h-full flex-col">
         <div className="flex items-center justify-between px-4 pt-4">
           <div className="text-xs font-semibold tracking-wide text-white/65">
             Items
@@ -59,7 +59,7 @@ export function LeftItemsPanel() {
             </button>
           </div>
         </div>
-      </GlassPanel>
+      </Panel>
     </aside>
   );
 }

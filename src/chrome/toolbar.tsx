@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { createContext, useContext, useMemo } from "react";
-import { FrostedSurface } from "../ui/frosted-surface";
+import { Panel } from "./panel";
 
 type ToolbarContextValue = {
   showLabelsOnHover: boolean;
@@ -34,12 +34,13 @@ export function Toolbar(props: {
           .filter(Boolean)
           .join(" ")}
       >
-        <FrostedSurface
+        <Panel
+          variant="frosted"
           radiusClassName="rounded-xl"
           className="border border-white/10 p-0.5 shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
         >
           <div className="flex flex-col">{props.children}</div>
-        </FrostedSurface>
+        </Panel>
       </div>
     </ToolbarContext.Provider>
   );
@@ -80,7 +81,8 @@ export function ToolbarButton(props: {
             .filter(Boolean)
             .join(" ")}
         >
-          <FrostedSurface
+          <Panel
+            variant="frosted"
             radiusClassName="rounded-lg"
             className="flex h-8 items-center gap-2 border border-white/10 px-3.5 text-[13px] leading-none font-semibold whitespace-nowrap text-white/90 shadow-[0_10px_22px_rgba(0,0,0,0.38)]"
           >
@@ -90,7 +92,7 @@ export function ToolbarButton(props: {
                 {props.shortcut}
               </span>
             : null}
-          </FrostedSurface>
+          </Panel>
         </div>
       : null}
     </div>
