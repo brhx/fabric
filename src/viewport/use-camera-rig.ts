@@ -286,6 +286,122 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     [orbitAroundUp],
   );
 
+  const onSelectDirection = useCallback(
+    (worldDirection: [number, number, number]) => {
+      const controls = controlsRef.current;
+      if (!controls) return;
+
+      // WHY: ViewCube "snap" is a discrete camera jump. If we let CameraControls keep
+      // its previous transition/inertia state, the snap can start from an intermediate
+      // camera pose, which makes the orbit plane feel inconsistent immediately after.
+      // Cancel any in-flight inertia/transition so this snap establishes a clean baseline.
+      controls.stop();
+
+      controls.getTarget(scratch.target, false);
+      controls.update(0);
+
+      // Use the camera's actual world-space position; CameraControls may have applied a
+      // focal offset (dolly-to-cursor). We snap from the "base" orbit position so the
+      // resulting view and subsequent world-up orbit behave consistently.
+      scratch.position.copy(controls.camera.position);
+
+      controls.getFocalOffset(scratch.focalOffset, false);
+      if (scratch.focalOffset.lengthSq() > 0) {
+        // WHY: `getPosition()` returns the *pre-offset* position, but `camera.position`
+        // includes the focal offset. If we snap using the offset position, the snap and
+        // the next orbit will be biased around the orbit-point/dolly cursor instead of
+        // the true target, which feels like orbiting around the wrong plane.
+        scratch.cameraMatrix.compose(
+          controls.camera.position,
+          controls.camera.quaternion,
+          controls.camera.scale,
+        );
+        scratch.cameraXAxis.setFromMatrixColumn(scratch.cameraMatrix, 0);
+        scratch.cameraYAxis.setFromMatrixColumn(scratch.cameraMatrix, 1);
+        scratch.cameraZAxis.setFromMatrixColumn(scratch.cameraMatrix, 2);
+
+        scratch.focalOffsetWorld
+          .copy(scratch.cameraXAxis)
+          .multiplyScalar(scratch.focalOffset.x)
+          .addScaledVector(scratch.cameraYAxis, -scratch.focalOffset.y)
+          .addScaledVector(scratch.cameraZAxis, scratch.focalOffset.z);
+
+        scratch.position.sub(scratch.focalOffsetWorld);
+      }
+
+      // ViewCube snaps are "canonical view" jumps; clear the orbit-point/dolly offset so
+      // the snapped face aligns cleanly and orbit stays anchored to the target.
+      // WHY: Leaving a focal offset active after snapping can make orbiting feel like it
+      // pivots around a different point/plane than the one implied by the cube face.
+      void controls.setFocalOffset(0, 0, 0, false);
+
+      const radius = scratch.position.distanceTo(scratch.target);
+      if (!Number.isFinite(radius) || radius <= 0) return;
+
+      const orbitUp = worldFrame.getUpAt(scratch.target, scratch.orbitUp);
+      if (orbitUp.lengthSq() === 0) return;
+      orbitUp.normalize();
+
+      // Prefer a globally-consistent up axis for ViewCube snaps so subsequent orbit always
+      // feels grounded to the orbit plane. For pole views (looking near ±orbitUp), use a
+      // stable in-plane up to avoid `lookAt` singularities.
+      //
+      // WHY:
+      // - Orbit input is defined relative to the world's "up" (worldFrame.getUpAt), not
+      //   necessarily the view's "up" (e.g. the Home view uses north-up in the ground plane).
+      // - If we keep a view-specific `camera.up` after snapping, CameraControls' internal
+      //   up-space transform can interpret later orbit deltas in a way that feels like it's
+      //   orbiting around the wrong plane.
+      // - But when looking straight along ±orbitUp, forcing `camera.up = orbitUp` hits a
+      //   lookAt singularity/roll ambiguity, so we choose a stable in-plane up instead.
+      worldFrame.getBasisAt(scratch.target, scratch.viewBasis);
+
+      scratch.worldDirection.set(
+        worldDirection[0],
+        worldDirection[1],
+        worldDirection[2],
+      );
+      if (scratch.worldDirection.lengthSq() === 0)
+        scratch.worldDirection.copy(orbitUp);
+      scratch.worldDirection.normalize();
+
+      const poleDot = Math.abs(scratch.worldDirection.dot(orbitUp));
+      if (poleDot > 0.98) {
+        // `basis.forward` is guaranteed to be orthogonal to `basis.up` (orbitUp). For ZUp,
+        // `-forward` corresponds to "north" (+Y), matching the Home view convention.
+        controls.camera.up.copy(scratch.viewBasis.forward).multiplyScalar(-1);
+      } else {
+        controls.camera.up.copy(orbitUp);
+      }
+      // WHY: CameraControls caches a transform derived from `camera.up`. Any time we
+      // mutate `camera.up`, we must call `updateCameraUp()` or subsequent setLookAt/rotate
+      // operations will be computed in the wrong frame.
+      controls.updateCameraUp();
+
+      scratch.position
+        .copy(scratch.target)
+        .addScaledVector(scratch.worldDirection, radius);
+
+      void controls.setLookAt(
+        scratch.position.x,
+        scratch.position.y,
+        scratch.position.z,
+        scratch.target.x,
+        scratch.target.y,
+        scratch.target.z,
+        true,
+      );
+      controls.update(0);
+
+      // WHY: `orbitAroundUp` caches spherical angles to keep azimuth continuity across
+      // wrap-around. After a snap, the cached angles are no longer meaningful, so we
+      // invalidate to ensure the next orbit seeds from the snapped camera pose.
+      orbitStateRef.current.valid = false;
+      invalidate();
+    },
+    [invalidate, scratch, worldFrame],
+  );
+
   const getWorldDirectionFromLocalDirection = useCallback(
     (localDirection: [number, number, number]): [number, number, number] => {
       const controls = controlsRef.current;
@@ -357,5 +473,6 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     getWorldDirectionFromLocalDirection,
     onOrbitInput,
     onRotateAroundUp,
+    onSelectDirection,
   };
 }

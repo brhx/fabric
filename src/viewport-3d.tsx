@@ -115,6 +115,11 @@ function ViewportScene() {
         getWorldDirectionFromLocalDirection={
           rig.getWorldDirectionFromLocalDirection
         }
+        // Route ViewCube face clicks through the camera rig so snaps establish a
+        // consistent orbit plane (worldFrame up) and don't regress into CameraControls'
+        // default rotate behavior (which can feel like orbiting around the wrong plane
+        // after top-down/north-up views).
+        onSelectDirection={rig.onSelectDirection}
         onOrbitInput={rig.onOrbitInput}
         onRotateAroundUp={rig.onRotateAroundUp}
       />
