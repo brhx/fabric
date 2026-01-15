@@ -12,6 +12,7 @@ export type DefaultView = {
   label: string;
   target: [number, number, number];
   position: [number, number, number];
+  up?: [number, number, number];
   shortcut?: KeyboardShortcut;
 };
 
@@ -20,7 +21,9 @@ export const DEFAULT_VIEWS: DefaultView[] = [
     id: "home",
     label: "Home",
     target: [0, 0, 0],
-    position: [10, -10, 10],
+    // Exact top-down view from above the ground plane with north (+Y) at the top of the screen.
+    position: [0, 0, 20],
+    up: [0, 1, 0],
     shortcut: {
       metaKey: true,
       ctrlKey: false,

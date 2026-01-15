@@ -67,6 +67,7 @@ export type ViewCubeProps = {
   onSelectDirection?: (worldDirection: [number, number, number]) => void;
   onRotateAroundUp?: (radians: number) => boolean;
   onOrbitInput?: (azimuthRadians: number, polarRadians: number) => boolean;
+  disableSelection?: () => boolean;
   getWorldDirectionFromLocalDirection?: (
     localDirection: [number, number, number],
   ) => [number, number, number];
@@ -112,7 +113,7 @@ function ViewCubeHud(
     if (!getWorldDirectionFromLocalDirection)
       return localDirectionToWorldDirection;
     return (direction: readonly [number, number, number]) =>
-      getWorldDirectionFromLocalDirection!([
+      getWorldDirectionFromLocalDirection([
         direction[0],
         direction[1],
         direction[2],
@@ -312,6 +313,7 @@ function ViewCubeHud(
     pointerClientRef,
     localToWorldDirection: localToWorldDirection,
     onOrbitInput: props.onOrbitInput,
+    disableSelection: props.disableSelection,
     onSelectDirection: props.onSelectDirection,
     moveCameraToWorldDirection,
     scratchWorldDirection: scratch.worldDirection,
@@ -704,9 +706,9 @@ function useViewCubeMargins(
       frame = null;
 
       const canvasRect = element.getBoundingClientRect();
-      const viewportElement = doc.querySelector(
+      const viewportElement = doc.querySelector<HTMLElement>(
         '[data-viewport-area="true"]',
-      ) as HTMLElement | null;
+      );
       syncViewportObserver(viewportElement);
       const viewportRect =
         viewportElement?.getBoundingClientRect() ?? canvasRect;
@@ -766,6 +768,7 @@ function useViewCubePointerEvents(options: {
     localDirection: readonly [number, number, number],
   ) => [number, number, number];
   onOrbitInput?: (azimuthRadians: number, polarRadians: number) => boolean;
+  disableSelection?: () => boolean;
   onSelectDirection?: (worldDirection: [number, number, number]) => void;
   moveCameraToWorldDirection: (worldDirection: Vector3) => void;
   scratchWorldDirection: Vector3;
@@ -780,6 +783,7 @@ function useViewCubePointerEvents(options: {
     pointerClientRef,
     localToWorldDirection,
     onOrbitInput,
+    disableSelection,
     onSelectDirection,
     moveCameraToWorldDirection,
     scratchWorldDirection,
@@ -924,6 +928,8 @@ function useViewCubePointerEvents(options: {
       const snap = snapLocal ? localToWorldDirection(snapLocal) : null;
       if (!snap) return;
 
+      if (disableSelection?.()) return;
+
       if (onSelectDirection) {
         onSelectDirection(snap);
         return;
@@ -995,6 +1001,7 @@ function useViewCubePointerEvents(options: {
     moveCameraToWorldDirection,
     onOrbitInput,
     onSelectDirection,
+    disableSelection,
     pointerClientRef,
     dragStateRef,
     scratchWorldDirection,

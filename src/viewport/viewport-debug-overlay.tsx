@@ -84,9 +84,7 @@ export function ViewportDebugOverlay(props: {
       frame = null;
 
       const canvasRect = element.getBoundingClientRect();
-      const viewportElement = doc.querySelector(
-        '[data-viewport-area="true"]',
-      ) as HTMLElement | null;
+      const viewportElement = doc.querySelector('[data-viewport-area="true"]');
       const viewportRect =
         viewportElement?.getBoundingClientRect() ?? canvasRect;
 
@@ -131,9 +129,7 @@ export function ViewportDebugOverlay(props: {
         })
       );
 
-    const viewportElement = doc.querySelector(
-      '[data-viewport-area="true"]',
-    ) as HTMLElement | null;
+    const viewportElement = doc.querySelector('[data-viewport-area="true"]');
     if (resizeObserver && viewportElement)
       resizeObserver.observe(viewportElement);
 

@@ -92,6 +92,7 @@ function ViewportScene() {
         panSpeed={PAN_SPEED}
         minDistance={MIN_DISTANCE}
         maxDistance={MAX_DISTANCE}
+        onOrbitInput={rig.onOrbitInput}
         onRenderPan={geo.translateRender}
         getOrbitFallbackPlane={getOrbitFallbackPlane}
       />
@@ -114,6 +115,8 @@ function ViewportScene() {
         getWorldDirectionFromLocalDirection={
           rig.getWorldDirectionFromLocalDirection
         }
+        onOrbitInput={rig.onOrbitInput}
+        onRotateAroundUp={rig.onRotateAroundUp}
       />
     </>
   );

@@ -2,6 +2,7 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["react", "unicorn", "typescript", "oxc"],
   "rules": {
-    "unicorn/filename-case": ["error", { "case": "kebabCase" }]
+    "unicorn/filename-case": ["error", { "case": "kebabCase" }],
+    "typescript/no-inferrable-types": "error"
   }
 }

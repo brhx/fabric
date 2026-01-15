@@ -10,7 +10,7 @@ import {
   RIGHT_TOOLBAR_GROUPS,
   TOOLBAR_ICON_CLASSNAME,
 } from "./chrome/toolbar-config";
-import { Viewport3D } from "./viewport3-d";
+import { Viewport3D } from "./viewport-3d";
 
 function ShortcutKeycaps(props: { keys: readonly string[] }) {
   return (
