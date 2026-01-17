@@ -11,7 +11,9 @@
     "lint": "oxlint --type-aware",
     "lint:fix": "oxlint --type-aware --fix",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest",
+    "test:e2e:web": "vitest run tests/e2e"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -33,6 +35,7 @@
     "@vitejs/plugin-react": "^4.6.0",
     "oxlint": "^1.39.0",
     "oxlint-tsgolint": "^0.11.0",
+    "playwright": "^1.57.0",
     "prettier": "^3.7.4",
     "prettier-plugin-embed": "^0.5.1",
     "prettier-plugin-jsdoc": "^1.8.0",
@@ -41,6 +44,7 @@
     "prettier-plugin-tailwindcss": "^0.7.2",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^4.0.17"
   }
 }
