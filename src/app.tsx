@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./app.css";
 import { Keycap } from "./chrome/keycap";
 import { LeftItemsPanel } from "./chrome/left-items-panel";
@@ -25,10 +25,25 @@ function ShortcutKeycaps(props: { keys: readonly string[] }) {
 function App() {
   const [projectName, setProjectName] = useState("Untitled Project");
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
+  const [viewportKey, setViewportKey] = useState(0);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!event.metaKey || event.shiftKey || event.altKey) return;
+      if (event.key !== "r" && event.key !== "R" && event.code !== "KeyR") {
+        return;
+      }
+      event.preventDefault();
+      setViewportKey((value) => value + 1);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   return (
     <main className="relative h-full w-full overflow-hidden text-zinc-100 selection:bg-blue-500/30 selection:text-white">
-      <Viewport3D className="absolute inset-0" />
+      <Viewport3D key={viewportKey} className="absolute inset-0" />
       <div
         aria-hidden="true"
         className="fabric-canvas pointer-events-none absolute inset-0"
