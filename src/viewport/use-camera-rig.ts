@@ -10,16 +10,18 @@ import {
   Vector3,
 } from "three";
 import { isPerspectiveCamera } from "../camera";
+import { stopControlsAtCurrent } from "./camera-controls-utils";
 import { viewHeightForPerspective } from "./camera-math";
-import { DEFAULT_PERSPECTIVE_FOV_DEG } from "./constants";
 import {
   DEFAULT_VIEW_ID,
   getDefaultView,
   type DefaultViewId,
 } from "./default-views";
-import { ZUpFrame, type ViewBasis, type WorldFrame } from "./world-frame";
+import { stabilizePoleDirection } from "./pole-nudge";
+import { ZUpFrame, type WorldFrame } from "./world-frame";
 
 const Y_UP = new Vector3(0, 1, 0);
+const WORLD_UP = new Vector3(0, 0, 1);
 
 export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
   const worldFrame = options?.worldFrame ?? ZUpFrame;
@@ -27,19 +29,11 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
 
   const controlsRef = useRef<CameraControlsImpl | null>(null);
   const perspectiveCameraRef = useRef<PerspectiveCamera | null>(null);
+  const inputBlockRef = useRef(0);
 
   const defaultViewRequestRef = useRef<DefaultViewId | null>(null);
   const initializedRef = useRef(false);
   const worldUnitsPerPixelRef = useRef<number>(1);
-  const orbitStateRef = useRef({
-    theta: 0,
-    phi: 0,
-    // Cached orbit angles so we can keep rotation continuous across the -π/π wrap,
-    // and so we can reset cleanly when the world's up axis changes (e.g. globe mode).
-    valid: false,
-    up: new Vector3(),
-  });
-
   const scratch = useMemo(
     () => ({
       cameraMatrix: new Matrix4(),
@@ -50,30 +44,42 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       focalOffsetWorld: new Vector3(),
       target: new Vector3(),
       position: new Vector3(),
+      nudge: new Vector3(),
       worldDirection: new Vector3(),
       orbitUp: new Vector3(),
       orbitOffset: new Vector3(),
       orbitQuaternion: new Quaternion(),
       orbitQuaternionInverse: new Quaternion(),
       orbitSpherical: new Spherical(),
-      viewBasis: {
-        right: new Vector3(),
-        up: new Vector3(),
-        forward: new Vector3(),
-      } satisfies ViewBasis,
     }),
     [],
   );
 
+  const beginInputBlock = useCallback(() => {
+    const next = inputBlockRef.current + 1;
+    inputBlockRef.current = next;
+    return next;
+  }, []);
+
+  const endInputBlock = useCallback((token: number) => {
+    if (inputBlockRef.current !== token) return;
+    inputBlockRef.current = 0;
+  }, []);
+
+  const interruptInputs = useCallback(() => {
+    const controls = controlsRef.current;
+    if (controls) stopControlsAtCurrent(controls);
+  }, []);
+
   const applyDefaultView = useCallback(
-    (viewId: DefaultViewId) => {
+    (viewId: DefaultViewId, enableTransition: boolean) => {
       const controls = controlsRef.current;
       const perspective = perspectiveCameraRef.current;
       if (!controls || !perspective) return false;
 
       const view = getDefaultView(viewId);
 
-      controls.stop();
+      stopControlsAtCurrent(controls);
 
       scratch.target.set(...view.target);
       scratch.position.set(...view.position);
@@ -81,62 +87,46 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       const defaultRadius = scratch.position.distanceTo(scratch.target);
       if (!Number.isFinite(defaultRadius) || defaultRadius <= 0) return false;
 
-      // Ensure a known camera config for "default views" so:
-      // - zoom/pan scaling derived from FOV is deterministic
-      // - we don't carry over previous camera state when switching views
-      perspective.fov = DEFAULT_PERSPECTIVE_FOV_DEG;
-      perspective.updateProjectionMatrix();
-
-      const orbitUp = worldFrame.getUpAt(scratch.target, scratch.orbitUp);
-      if (orbitUp.lengthSq() === 0) return false;
-      orbitUp.normalize();
-
-      // CameraControls uses `camera.up` as its orbit "up axis" (via `updateCameraUp()`).
-      // Default views are allowed to set a view-specific `up` (e.g. to make top-down be
-      // "north-up"). Orbiting itself still uses `worldFrame.getUpAt(...)` (ground-plane up).
-      let viewUp = orbitUp;
-      if (view.up) {
-        viewUp = scratch.viewBasis.up.set(...view.up);
-        if (viewUp.lengthSq() === 0) return false;
-        viewUp.normalize();
-      }
-
-      perspective.up.copy(viewUp);
       set({ camera: perspective });
       controls.camera = perspective;
-      // Keep CameraControls' internal up-space transform in sync with `camera.up`.
-      // Without this, subsequent `setLookAt/getPosition/rotate` will behave incorrectly.
+
+      perspective.up.copy(WORLD_UP);
       controls.updateCameraUp();
 
-      void controls.setLookAt(
+      const blockToken = enableTransition ? beginInputBlock() : null;
+      const focalPromise = controls.setFocalOffset(0, 0, 0, enableTransition);
+      const lookPromise = controls.setLookAt(
         scratch.position.x,
         scratch.position.y,
         scratch.position.z,
         scratch.target.x,
         scratch.target.y,
         scratch.target.z,
-        false,
+        enableTransition,
       );
-      // Clear any "orbit point"/dolly-to-cursor offset when jumping to a canonical view.
-      void controls.setFocalOffset(0, 0, 0, false);
+      if (blockToken !== null) {
+        void Promise.all([focalPromise, lookPromise]).finally(() => {
+          endInputBlock(blockToken);
+        });
+      }
       // Apply immediately (frameloop is demand-driven, so we can't rely on the next tick).
       controls.update(0);
-
-      orbitStateRef.current.valid = false;
 
       invalidate();
       return true;
     },
-    [invalidate, scratch, set, worldFrame],
+    [beginInputBlock, endInputBlock, invalidate, scratch, set],
   );
 
   const requestDefaultView = useCallback(
     (viewId?: DefaultViewId) => {
-      defaultViewRequestRef.current = viewId ?? DEFAULT_VIEW_ID;
-      orbitStateRef.current.valid = false;
+      interruptInputs();
+      const nextViewId = viewId ?? DEFAULT_VIEW_ID;
+      const applied = applyDefaultView(nextViewId, true);
+      defaultViewRequestRef.current = applied ? null : nextViewId;
       invalidate();
     },
-    [invalidate],
+    [applyDefaultView, interruptInputs, invalidate],
   );
 
   const orbitAroundUp = useCallback(
@@ -149,7 +139,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       if (!controls) return false;
 
       // User orbit should take over immediately, even if a prior transition is in flight.
-      controls.stop();
+      stopControlsAtCurrent(controls);
 
       controls.getTarget(scratch.target, false);
       // Apply the stopped state to the underlying three.js camera so we can read its
@@ -190,16 +180,8 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       const orbitUp = worldFrame.getUpAt(scratch.target, scratch.orbitUp);
       if (orbitUp.lengthSq() === 0) return false;
       orbitUp.normalize();
-
-      // Ensure CameraControls' up-space matches the orbit axis we want (ground-plane up).
-      // This is especially important when the default view uses a view-specific up (north-up).
-      const cameraUpDot = controls.camera.up.dot(orbitUp);
-      const didChangeUp = cameraUpDot < 0.999;
-      if (didChangeUp) {
-        controls.camera.up.copy(orbitUp);
-        controls.updateCameraUp();
-      }
-      const enableTransitionEffective = enableTransition && !didChangeUp;
+      controls.camera.up.copy(WORLD_UP);
+      controls.updateCameraUp();
 
       // Three.js spherical coordinates assume Y-up. To orbit around an arbitrary world up
       // (e.g. Z-up ground plane, or a radial "up" on a globe), rotate into a temporary
@@ -209,23 +191,6 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
 
       scratch.orbitOffset.applyQuaternion(scratch.orbitQuaternion);
       scratch.orbitSpherical.setFromVector3(scratch.orbitOffset);
-
-      const orbitState = orbitStateRef.current;
-      const upDot = orbitState.valid ? orbitState.up.dot(orbitUp) : 0;
-      if (!orbitState.valid || upDot < 0.999) {
-        orbitState.valid = true;
-        orbitState.up.copy(orbitUp);
-        orbitState.theta = scratch.orbitSpherical.theta;
-        orbitState.phi = scratch.orbitSpherical.phi;
-      } else {
-        // Avoid theta wrapping discontinuities so repeated small deltas keep rotating
-        // in the expected direction (instead of jumping ~2π at the branch cut).
-        const theta = scratch.orbitSpherical.theta;
-        const delta = theta - orbitState.theta;
-        if (delta > Math.PI) scratch.orbitSpherical.theta = theta - Math.PI * 2;
-        else if (delta < -Math.PI)
-          scratch.orbitSpherical.theta = theta + Math.PI * 2;
-      }
 
       const nextTheta = MathUtils.clamp(
         scratch.orbitSpherical.theta + azimuthRadians,
@@ -246,23 +211,20 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       scratch.orbitOffset.applyQuaternion(scratch.orbitQuaternionInverse);
       scratch.position.copy(scratch.target).add(scratch.orbitOffset);
 
-      void controls.setLookAt(
+      const blockToken = enableTransition ? beginInputBlock() : null;
+      const lookPromise = controls.setLookAt(
         scratch.position.x,
         scratch.position.y,
         scratch.position.z,
         scratch.target.x,
         scratch.target.y,
         scratch.target.z,
-        enableTransitionEffective,
+        enableTransition,
       );
-
-      if (enableTransitionEffective) {
-        orbitState.valid = false;
-      } else {
-        orbitState.valid = true;
-        orbitState.theta = nextTheta;
-        orbitState.phi = scratch.orbitSpherical.phi;
-        orbitState.up.copy(orbitUp);
+      if (blockToken !== null) {
+        void lookPromise.finally(() => {
+          endInputBlock(blockToken);
+        });
       }
 
       // Whether we're animating or applying immediately, we need to kick the demand-driven
@@ -272,7 +234,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
 
       return true;
     },
-    [invalidate, scratch, worldFrame],
+    [beginInputBlock, endInputBlock, invalidate, scratch, worldFrame],
   );
 
   const onOrbitInput = useCallback(
@@ -282,35 +244,28 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
   );
 
   const onRotateAroundUp = useCallback(
-    (radians: number) => orbitAroundUp(radians, 0, true),
-    [orbitAroundUp],
+    (radians: number) => {
+      interruptInputs();
+      return orbitAroundUp(radians, 0, true);
+    },
+    [interruptInputs, orbitAroundUp],
   );
 
   const onSelectDirection = useCallback(
     (worldDirection: [number, number, number]) => {
       const controls = controlsRef.current;
       if (!controls) return;
+      interruptInputs();
 
-      // WHY: ViewCube "snap" is a discrete camera jump. If we let CameraControls keep
-      // its previous transition/inertia state, the snap can start from an intermediate
-      // camera pose, which makes the orbit plane feel inconsistent immediately after.
-      // Cancel any in-flight inertia/transition so this snap establishes a clean baseline.
-      controls.stop();
+      controls.camera.up.copy(WORLD_UP);
+      controls.updateCameraUp();
 
       controls.getTarget(scratch.target, false);
       controls.update(0);
-
-      // Use the camera's actual world-space position; CameraControls may have applied a
-      // focal offset (dolly-to-cursor). We snap from the "base" orbit position so the
-      // resulting view and subsequent world-up orbit behave consistently.
       scratch.position.copy(controls.camera.position);
 
       controls.getFocalOffset(scratch.focalOffset, false);
       if (scratch.focalOffset.lengthSq() > 0) {
-        // WHY: `getPosition()` returns the *pre-offset* position, but `camera.position`
-        // includes the focal offset. If we snap using the offset position, the snap and
-        // the next orbit will be biased around the orbit-point/dolly cursor instead of
-        // the true target, which feels like orbiting around the wrong plane.
         scratch.cameraMatrix.compose(
           controls.camera.position,
           controls.camera.quaternion,
@@ -329,60 +284,33 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
         scratch.position.sub(scratch.focalOffsetWorld);
       }
 
-      // ViewCube snaps are "canonical view" jumps; clear the orbit-point/dolly offset so
-      // the snapped face aligns cleanly and orbit stays anchored to the target.
-      // WHY: Leaving a focal offset active after snapping can make orbiting feel like it
-      // pivots around a different point/plane than the one implied by the cube face.
-      void controls.setFocalOffset(0, 0, 0, false);
-
       const radius = scratch.position.distanceTo(scratch.target);
       if (!Number.isFinite(radius) || radius <= 0) return;
-
-      const orbitUp = worldFrame.getUpAt(scratch.target, scratch.orbitUp);
-      if (orbitUp.lengthSq() === 0) return;
-      orbitUp.normalize();
-
-      // Prefer a globally-consistent up axis for ViewCube snaps so subsequent orbit always
-      // feels grounded to the orbit plane. For pole views (looking near ±orbitUp), use a
-      // stable in-plane up to avoid `lookAt` singularities.
-      //
-      // WHY:
-      // - Orbit input is defined relative to the world's "up" (worldFrame.getUpAt), not
-      //   necessarily the view's "up" (e.g. the Home view uses north-up in the ground plane).
-      // - If we keep a view-specific `camera.up` after snapping, CameraControls' internal
-      //   up-space transform can interpret later orbit deltas in a way that feels like it's
-      //   orbiting around the wrong plane.
-      // - But when looking straight along ±orbitUp, forcing `camera.up = orbitUp` hits a
-      //   lookAt singularity/roll ambiguity, so we choose a stable in-plane up instead.
-      worldFrame.getBasisAt(scratch.target, scratch.viewBasis);
 
       scratch.worldDirection.set(
         worldDirection[0],
         worldDirection[1],
         worldDirection[2],
       );
-      if (scratch.worldDirection.lengthSq() === 0)
-        scratch.worldDirection.copy(orbitUp);
+      if (scratch.worldDirection.lengthSq() === 0) return;
       scratch.worldDirection.normalize();
 
-      const poleDot = Math.abs(scratch.worldDirection.dot(orbitUp));
-      if (poleDot > 0.98) {
-        // `basis.forward` is guaranteed to be orthogonal to `basis.up` (orbitUp). For ZUp,
-        // `-forward` corresponds to "north" (+Y), matching the Home view convention.
-        controls.camera.up.copy(scratch.viewBasis.forward).multiplyScalar(-1);
-      } else {
-        controls.camera.up.copy(orbitUp);
-      }
-      // WHY: CameraControls caches a transform derived from `camera.up`. Any time we
-      // mutate `camera.up`, we must call `updateCameraUp()` or subsequent setLookAt/rotate
-      // operations will be computed in the wrong frame.
-      controls.updateCameraUp();
+      scratch.nudge.copy(scratch.position).sub(scratch.target);
+      stabilizePoleDirection({
+        direction: scratch.worldDirection,
+        up: controls.camera.up,
+        viewVector: scratch.nudge,
+        poleThreshold: 0.98,
+      });
 
       scratch.position
         .copy(scratch.target)
         .addScaledVector(scratch.worldDirection, radius);
 
-      void controls.setLookAt(
+      const blockToken = beginInputBlock();
+      const focalPromise = controls.setFocalOffset(0, 0, 0, true);
+
+      const lookPromise = controls.setLookAt(
         scratch.position.x,
         scratch.position.y,
         scratch.position.z,
@@ -391,41 +319,13 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
         scratch.target.z,
         true,
       );
+      void Promise.all([focalPromise, lookPromise]).finally(() => {
+        endInputBlock(blockToken);
+      });
       controls.update(0);
-
-      // WHY: `orbitAroundUp` caches spherical angles to keep azimuth continuity across
-      // wrap-around. After a snap, the cached angles are no longer meaningful, so we
-      // invalidate to ensure the next orbit seeds from the snapped camera pose.
-      orbitStateRef.current.valid = false;
       invalidate();
     },
-    [invalidate, scratch, worldFrame],
-  );
-
-  const getWorldDirectionFromLocalDirection = useCallback(
-    (localDirection: [number, number, number]): [number, number, number] => {
-      const controls = controlsRef.current;
-      if (!controls) return [0, 0, 1];
-
-      controls.getTarget(scratch.target);
-      worldFrame.getBasisAt(scratch.target, scratch.viewBasis);
-
-      scratch.worldDirection
-        .copy(scratch.viewBasis.right)
-        .multiplyScalar(localDirection[0])
-        .addScaledVector(scratch.viewBasis.up, localDirection[1])
-        .addScaledVector(scratch.viewBasis.forward, localDirection[2]);
-
-      if (scratch.worldDirection.lengthSq() === 0)
-        scratch.worldDirection.copy(scratch.viewBasis.up);
-      scratch.worldDirection.normalize();
-      return [
-        scratch.worldDirection.x,
-        scratch.worldDirection.y,
-        scratch.worldDirection.z,
-      ];
-    },
-    [scratch, worldFrame],
+    [beginInputBlock, endInputBlock, interruptInputs, invalidate, scratch],
   );
 
   useFrame(() => {
@@ -433,7 +333,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     if (!controls) return;
 
     if (!initializedRef.current) {
-      const applied = applyDefaultView(DEFAULT_VIEW_ID);
+      const applied = applyDefaultView(DEFAULT_VIEW_ID, false);
       if (applied) {
         initializedRef.current = true;
       }
@@ -442,8 +342,8 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
 
     const viewportHeightPx = Math.max(1, size.height);
     if (isPerspectiveCamera(controls.camera)) {
-      controls.getPosition(scratch.position);
-      controls.getTarget(scratch.target);
+      controls.getPosition(scratch.position, false);
+      controls.getTarget(scratch.target, false);
       const distance = scratch.position.distanceTo(scratch.target);
       if (Number.isFinite(distance) && distance > 0) {
         const nextUnitsPerPixel =
@@ -457,7 +357,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
 
     const defaultViewId = defaultViewRequestRef.current;
     if (defaultViewId) {
-      const applied = applyDefaultView(defaultViewId);
+      const applied = applyDefaultView(defaultViewId, true);
       if (applied) {
         defaultViewRequestRef.current = null;
       }
@@ -469,8 +369,8 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     controlsRef,
     perspectiveCameraRef,
     worldUnitsPerPixelRef,
+    inputBlockRef,
     requestDefaultView,
-    getWorldDirectionFromLocalDirection,
     onOrbitInput,
     onRotateAroundUp,
     onSelectDirection,

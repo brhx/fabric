@@ -4,13 +4,13 @@ import {
 } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
 import {
+  CONTROLS_DRAGGING_SMOOTH_TIME,
+  CONTROLS_SMOOTH_TIME,
   MAX_DISTANCE,
   MIN_DISTANCE,
   PAN_SPEED,
   ROTATE_SPEED,
 } from "./viewport/constants";
-import { GeoRoot } from "./viewport/geo/geo-root";
-import { useGeoFrame } from "./viewport/geo/use-geo-frame";
 import { MainScene } from "./viewport/scene-helpers";
 import { StableCameraControls } from "./viewport/stable-camera-controls";
 import { TrackpadControls } from "./viewport/trackpad-controls";
@@ -47,13 +47,13 @@ export function Viewport3D(props: { className?: string }) {
 function ViewportScene() {
   const gl = useThree((state) => state.gl);
   const rig = useCameraRig();
-  const geo = useGeoFrame();
-  const getOrbitFallbackPlane = useOrbitFallbackPlane(geo.renderOffset);
+  const getOrbitFallbackPlane = useOrbitFallbackPlane();
 
   useDefaultViewShortcuts({
     element: gl.domElement,
-    reset: geo.reset,
-    requestDefaultView: rig.requestDefaultView,
+    onSelectDefaultView: (id) => {
+      rig.requestDefaultView(id);
+    },
   });
 
   return (
@@ -63,11 +63,14 @@ function ViewportScene() {
         up={[0, 0, 1]}
         near={0.1}
         far={50000}
+        fov={45}
       />
 
       <StableCameraControls
         ref={rig.controlsRef}
         makeDefault
+        smoothTime={CONTROLS_SMOOTH_TIME}
+        draggingSmoothTime={CONTROLS_DRAGGING_SMOOTH_TIME}
         minDistance={MIN_DISTANCE}
         maxDistance={MAX_DISTANCE}
         minPolarAngle={0.01}
@@ -87,34 +90,24 @@ function ViewportScene() {
 
       <TrackpadControls
         controlsRef={rig.controlsRef}
+        inputBlockRef={rig.inputBlockRef}
         worldFrame={rig.worldFrame}
         rotateSpeed={ROTATE_SPEED}
         panSpeed={PAN_SPEED}
         minDistance={MIN_DISTANCE}
         maxDistance={MAX_DISTANCE}
         onOrbitInput={rig.onOrbitInput}
-        onRenderPan={geo.translateRender}
         getOrbitFallbackPlane={getOrbitFallbackPlane}
       />
 
-      <MainScene renderOffset={geo.renderOffset} />
-      <GeoRoot frame={geo.frame} />
+      <MainScene />
       <ViewportDebugOverlay
         controlsRef={rig.controlsRef}
         worldUnitsPerPixelRef={rig.worldUnitsPerPixelRef}
-        geo={{
-          geodetic: geo.geodetic,
-          originEcef: geo.originEcef,
-          renderOffset: geo.renderOffset,
-          frame: geo.frame,
-        }}
         enabledByDefault={false}
       />
       <ViewCube
         controls={rig.controlsRef}
-        getWorldDirectionFromLocalDirection={
-          rig.getWorldDirectionFromLocalDirection
-        }
         // Route ViewCube face clicks through the camera rig so snaps establish a
         // consistent orbit plane (worldFrame up) and don't regress into CameraControls'
         // default rotate behavior (which can feel like orbiting around the wrong plane

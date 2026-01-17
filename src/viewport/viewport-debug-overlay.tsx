@@ -3,10 +3,9 @@ import { Html } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { MutableRefObject, RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Vector3 } from "three";
+import { Spherical, Vector3 } from "three";
 import { isPerspectiveCamera } from "../camera";
-import type { LocalEnuFrame } from "./geo/local-frame";
-import type { Geodetic } from "./geo/wgs84";
+import { matchDefaultViewShortcut } from "./default-views";
 import {
   VIEWCUBE_MARGIN_RIGHT_PX,
   VIEWCUBE_MARGIN_TOP_PX,
@@ -22,19 +21,22 @@ function formatVec3(v: Vector3, decimals = 3) {
   return `(${formatNumber(v.x, decimals)}, ${formatNumber(v.y, decimals)}, ${formatNumber(v.z, decimals)})`;
 }
 
-function radToDeg(rad: number) {
-  return (rad * 180) / Math.PI;
+const POS_JUMP_THRESHOLD_MIN = 0.5;
+const POS_JUMP_THRESHOLD_RATIO = 0.05;
+const FOCAL_JUMP_THRESHOLD = 0.25;
+const ANGLE_JUMP_THRESHOLD = 0.1;
+const JUMP_MEMORY_MS = 2000;
+
+function angleDelta(current: number, previous: number) {
+  const delta = current - previous;
+  const twoPi = Math.PI * 2;
+  const wrapped = ((((delta + Math.PI) % twoPi) + twoPi) % twoPi) - Math.PI;
+  return Math.abs(wrapped);
 }
 
 export function ViewportDebugOverlay(props: {
   controlsRef: RefObject<CameraControlsImpl | null>;
   worldUnitsPerPixelRef: MutableRefObject<number>;
-  geo: {
-    geodetic: Geodetic;
-    originEcef: Vector3;
-    renderOffset: Vector3;
-    frame: LocalEnuFrame;
-  };
   enabledByDefault?: boolean;
 }) {
   const gl = useThree((state) => state.gl);
@@ -46,12 +48,38 @@ export function ViewportDebugOverlay(props: {
   const portalRef = useRef<HTMLElement>(null as unknown as HTMLElement);
   const [portalReady, setPortalReady] = useState(false);
   const preRef = useRef<HTMLPreElement | null>(null);
+  const lastDefaultViewAtRef = useRef<number | null>(null);
+  const lastJumpRef = useRef<{
+    label: string;
+    at: number;
+    value: number;
+  } | null>(null);
+  const prevRef = useRef<{
+    hasPrev: boolean;
+    camPos: Vector3;
+    ctrlPos: Vector3;
+    ctrlFocal: Vector3;
+    sphRadius: number;
+    sphPhi: number;
+    sphTheta: number;
+  }>({
+    hasPrev: false,
+    camPos: new Vector3(),
+    ctrlPos: new Vector3(),
+    ctrlFocal: new Vector3(),
+    sphRadius: 0,
+    sphPhi: 0,
+    sphTheta: 0,
+  });
 
   const scratch = useMemo(
     () => ({
+      cameraWorldPosition: new Vector3(),
       position: new Vector3(),
       target: new Vector3(),
       up: new Vector3(),
+      focalOffset: new Vector3(),
+      spherical: new Spherical(),
       tmp: new Vector3(),
     }),
     [],
@@ -169,6 +197,25 @@ export function ViewportDebugOverlay(props: {
     };
   }, [gl, invalidate]);
 
+  useEffect(() => {
+    const element = gl.domElement;
+    const doc = element.ownerDocument;
+    const view = doc.defaultView;
+    if (!view) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const match = matchDefaultViewShortcut(event);
+      if (!match) return;
+      lastDefaultViewAtRef.current = view.performance?.now?.() ?? Date.now();
+      lastJumpRef.current = null;
+    };
+
+    view.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => {
+      view.removeEventListener("keydown", onKeyDown, { capture: true } as any);
+    };
+  }, [gl]);
+
   useFrame(() => {
     const pre = preRef.current;
     if (!pre) return;
@@ -180,44 +227,122 @@ export function ViewportDebugOverlay(props: {
     const controls = props.controlsRef.current;
     const activeCamera = controls?.camera ?? fallbackCamera;
     const isPersp = isPerspectiveCamera(activeCamera);
+    const now = (globalThis.performance?.now?.() ?? Date.now()) as number;
 
+    activeCamera.getWorldPosition(scratch.cameraWorldPosition);
     if (controls) {
-      controls.getPosition(scratch.position);
-      controls.getTarget(scratch.target);
+      controls.getPosition(scratch.position, false);
+      controls.getTarget(scratch.target, false);
+      controls.getFocalOffset(scratch.focalOffset, false);
+      controls.getSpherical(scratch.spherical, false);
     } else {
       scratch.position.copy(activeCamera.position);
       scratch.target.set(0, 0, 0);
+      scratch.focalOffset.set(0, 0, 0);
+      scratch.spherical.set(0, 0, 0);
     }
     scratch.up.copy(activeCamera.up);
 
-    const distance = scratch.position.distanceTo(scratch.target);
+    const distance = scratch.cameraWorldPosition.distanceTo(scratch.target);
     const unitsPerPixel = props.worldUnitsPerPixelRef.current;
+    const posJumpThreshold = Math.max(
+      POS_JUMP_THRESHOLD_MIN,
+      distance * POS_JUMP_THRESHOLD_RATIO,
+    );
 
-    const { geodetic, originEcef, renderOffset, frame } = props.geo;
+    const prev = prevRef.current;
+    let deltaCamPos = 0;
+    let deltaCtrlPos = 0;
+    let deltaCtrlFocal = 0;
+    let deltaSphRadius = 0;
+    let deltaSphPhi = 0;
+    let deltaSphTheta = 0;
 
-    const latDeg = radToDeg(geodetic.latRad);
-    const lonDeg = radToDeg(geodetic.lonRad);
+    if (prev.hasPrev) {
+      deltaCamPos = prev.camPos.distanceTo(scratch.cameraWorldPosition);
+      deltaCtrlPos = prev.ctrlPos.distanceTo(scratch.position);
+      deltaCtrlFocal = prev.ctrlFocal.distanceTo(scratch.focalOffset);
+      deltaSphRadius = Math.abs(scratch.spherical.radius - prev.sphRadius);
+      deltaSphPhi = angleDelta(scratch.spherical.phi, prev.sphPhi);
+      deltaSphTheta = angleDelta(scratch.spherical.theta, prev.sphTheta);
+
+      if (deltaCtrlPos > posJumpThreshold) {
+        lastJumpRef.current = {
+          label: "ctrl.pos",
+          at: now,
+          value: deltaCtrlPos,
+        };
+      } else if (deltaCtrlFocal > FOCAL_JUMP_THRESHOLD) {
+        lastJumpRef.current = {
+          label: "ctrl.focal",
+          at: now,
+          value: deltaCtrlFocal,
+        };
+      } else if (
+        deltaSphPhi > ANGLE_JUMP_THRESHOLD ||
+        deltaSphTheta > ANGLE_JUMP_THRESHOLD
+      ) {
+        lastJumpRef.current = {
+          label: "ctrl.sph",
+          at: now,
+          value: Math.max(deltaSphPhi, deltaSphTheta),
+        };
+      }
+    }
+
+    prev.camPos.copy(scratch.cameraWorldPosition);
+    prev.ctrlPos.copy(scratch.position);
+    prev.ctrlFocal.copy(scratch.focalOffset);
+    prev.sphRadius = scratch.spherical.radius;
+    prev.sphPhi = scratch.spherical.phi;
+    prev.sphTheta = scratch.spherical.theta;
+    prev.hasPrev = true;
 
     const lines: string[] = [];
     lines.push("Viewport Debug  (toggle: D)");
     lines.push("");
     lines.push(`camera: ${isPersp ? "perspective" : "unknown"}`);
     if (isPersp) lines.push(`fov: ${formatNumber(activeCamera.fov, 2)}°`);
-    lines.push(`pos: ${formatVec3(scratch.position, 3)}`);
-    lines.push(`tgt: ${formatVec3(scratch.target, 3)}`);
-    lines.push(`up:  ${formatVec3(scratch.up, 3)}`);
-    lines.push(`distance: ${formatNumber(distance, 3)}`);
-    lines.push(`units/px: ${formatNumber(unitsPerPixel, 6)}`);
-    lines.push("");
+    lines.push(`cam.pos: ${formatVec3(scratch.cameraWorldPosition, 3)}`);
+    lines.push(`cam.up:  ${formatVec3(scratch.up, 3)}`);
+    lines.push(`cam.dist: ${formatNumber(distance, 3)}`);
+    lines.push(`ctrl.pos: ${formatVec3(scratch.position, 3)}`);
+    lines.push(`ctrl.focal: ${formatVec3(scratch.focalOffset, 3)}`);
     lines.push(
-      `WGS84 lat/lon: ${formatNumber(latDeg, 6)}°, ${formatNumber(lonDeg, 6)}°`,
+      `ctrl.sph: (r=${formatNumber(scratch.spherical.radius, 3)}, phi=${formatNumber(scratch.spherical.phi, 3)}, theta=${formatNumber(scratch.spherical.theta, 3)})`,
     );
-    lines.push(`WGS84 height: ${formatNumber(geodetic.heightMeters, 3)} m`);
-    lines.push(`originEcef (m): ${formatVec3(originEcef, 3)}`);
-    lines.push(`renderOffset (m): ${formatVec3(renderOffset, 3)}`);
-    lines.push(`enu.eastEcef: ${formatVec3(frame.eastEcef, 4)}`);
-    lines.push(`enu.northEcef: ${formatVec3(frame.northEcef, 4)}`);
-    lines.push(`enu.upEcef: ${formatVec3(frame.upEcef, 4)}`);
+    lines.push(`d.cam.pos: ${formatNumber(deltaCamPos, 4)}`);
+    lines.push(`d.ctrl.pos: ${formatNumber(deltaCtrlPos, 4)}`);
+    lines.push(`d.ctrl.focal: ${formatNumber(deltaCtrlFocal, 4)}`);
+    lines.push(
+      `d.ctrl.sph: (dr=${formatNumber(deltaSphRadius, 4)}, dphi=${formatNumber(deltaSphPhi, 4)}, dtheta=${formatNumber(deltaSphTheta, 4)})`,
+    );
+    lines.push(`jump.thresh.pos: ${formatNumber(posJumpThreshold, 3)}`);
+    if (lastDefaultViewAtRef.current) {
+      lines.push(
+        `last cmd1: ${formatNumber(now - lastDefaultViewAtRef.current, 0)} ms`,
+      );
+    } else {
+      lines.push("last cmd1: n/a");
+    }
+    const lastJump = lastJumpRef.current;
+    if (lastJump && now - lastJump.at < JUMP_MEMORY_MS) {
+      lines.push(
+        `last jump: ${lastJump.label} Δ${formatNumber(lastJump.value, 4)} (${formatNumber(now - lastJump.at, 0)} ms ago)`,
+      );
+    } else {
+      lines.push("last jump: n/a");
+    }
+    if (controls) {
+      lines.push(`smoothTime: ${formatNumber(controls.smoothTime, 3)}`);
+      lines.push(
+        `draggingSmoothTime: ${formatNumber(controls.draggingSmoothTime, 3)}`,
+      );
+    } else {
+      lines.push("smoothTime: n/a");
+      lines.push("draggingSmoothTime: n/a");
+    }
+    lines.push(`units/px: ${formatNumber(unitsPerPixel, 6)}`);
 
     pre.textContent = lines.join("\n");
   }, -100);
@@ -231,6 +356,7 @@ export function ViewportDebugOverlay(props: {
       calculatePosition={() => [size.width / 2, size.height / 2]}
     >
       <div
+        data-testid="viewport-debug"
         style={{
           display: enabled ? "block" : "none",
           position: "absolute",
@@ -248,7 +374,11 @@ export function ViewportDebugOverlay(props: {
           whiteSpace: "pre",
         }}
       >
-        <pre ref={preRef} style={{ margin: 0 }} />
+        <pre
+          ref={preRef}
+          data-testid="viewport-debug-text"
+          style={{ margin: 0 }}
+        />
       </div>
     </Html>
   );

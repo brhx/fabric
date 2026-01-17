@@ -1,19 +1,14 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback } from "react";
 import type { Plane } from "three";
 import { Vector3 } from "three";
 import type { OrbitFallbackPlaneContext } from "./trackpad-controls";
 
 const Z_UP = new Vector3(0, 0, 1);
+const ORIGIN = new Vector3(0, 0, 0);
 
-export function useOrbitFallbackPlane(renderOffset: Vector3) {
-  const renderOffsetRef = useRef<Vector3>(renderOffset);
-
-  useEffect(() => {
-    renderOffsetRef.current = renderOffset;
-  }, [renderOffset]);
-
+export function useOrbitFallbackPlane() {
   return useCallback((_ctx: OrbitFallbackPlaneContext, out: Plane) => {
-    out.setFromNormalAndCoplanarPoint(Z_UP, renderOffsetRef.current);
+    out.setFromNormalAndCoplanarPoint(Z_UP, ORIGIN);
     return out;
   }, []);
 }

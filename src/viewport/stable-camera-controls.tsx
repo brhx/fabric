@@ -50,7 +50,8 @@ export const StableCameraControls = forwardRef<
   }, [makeDefault, controls, get, set]);
 
   useFrame((_state, delta) => {
-    if (controls.update(delta)) invalidate();
+    const safeDelta = Number.isFinite(delta) ? Math.min(delta, 1 / 60) : 0;
+    if (controls.update(safeDelta)) invalidate();
   }, -1);
 
   return <primitive ref={ref} object={controls} {...restProps} />;

@@ -15,6 +15,7 @@ export type OrbitFallbackPlaneContext = {
 
 export function TrackpadControls(props: {
   controlsRef: RefObject<CameraControlsImpl | null>;
+  inputBlockRef?: RefObject<number>;
   worldFrame: WorldFrame;
   rotateSpeed: number;
   panSpeed: number;
@@ -29,6 +30,7 @@ export function TrackpadControls(props: {
 }) {
   const {
     controlsRef,
+    inputBlockRef,
     worldFrame,
     rotateSpeed,
     panSpeed,
@@ -68,6 +70,19 @@ export function TrackpadControls(props: {
     const doc = element.ownerDocument;
     const view = doc.defaultView;
     if (!view) return;
+
+    const isInputBlocked = () => {
+      return Boolean(inputBlockRef?.current);
+    };
+
+    const swallowIfBlocked = (event: Event) => {
+      if (!inputBlockRef) return false;
+      if (!isInputBlocked()) return false;
+      event.preventDefault?.();
+      lastOrbitAt.current = null;
+      lastGestureScale.current = null;
+      return true;
+    };
 
     const getActiveCamera = () => controlsRef.current?.camera ?? camera;
 
@@ -117,7 +132,7 @@ export function TrackpadControls(props: {
       out: Vector3,
     ) => {
       const controls = controlsRef.current;
-      if (controls) controls.getTarget(scratch.tmpTarget);
+      if (controls) controls.getTarget(scratch.tmpTarget, false);
       else scratch.tmpTarget.set(0, 0, 0);
 
       out.copy(scratch.tmpTarget);
@@ -203,8 +218,8 @@ export function TrackpadControls(props: {
       let distanceScale = 0;
       const activeCamera = getActiveCamera();
       if (!isPerspectiveCamera(activeCamera)) return;
-      controls.getTarget(scratch.tmpTarget);
-      controls.getPosition(scratch.tmpPosition);
+      controls.getTarget(scratch.tmpTarget, false);
+      controls.getPosition(scratch.tmpPosition, false);
 
       const targetDistance = scratch.tmpPosition.distanceTo(scratch.tmpTarget);
       if (!Number.isFinite(targetDistance) || targetDistance <= 0) return;
@@ -218,19 +233,19 @@ export function TrackpadControls(props: {
 
       const shouldRebase = Boolean(onRenderPan);
       if (shouldRebase) {
-        controls.getTarget(scratch.tmpTarget);
+        controls.getTarget(scratch.tmpTarget, false);
         scratch.tmpPivot.copy(scratch.tmpTarget);
       }
 
       void controls.truck(panX, panY, false);
       if (shouldRebase) {
         controls.update(0);
-        controls.getTarget(scratch.tmpTarget);
+        controls.getTarget(scratch.tmpTarget, false);
         scratch.tmpDelta.copy(scratch.tmpTarget).sub(scratch.tmpPivot);
 
         if (scratch.tmpDelta.lengthSq() > 0) {
           onRenderPan?.(scratch.tmpDelta);
-          controls.getPosition(scratch.tmpPosition);
+          controls.getPosition(scratch.tmpPosition, false);
           scratch.tmpPosition.sub(scratch.tmpDelta);
           scratch.tmpTarget.sub(scratch.tmpDelta);
           void controls.setLookAt(
@@ -258,8 +273,8 @@ export function TrackpadControls(props: {
 
       if (!setPointer(clientX, clientY)) return;
 
-      controls.getTarget(scratch.tmpTarget);
-      controls.getPosition(scratch.tmpPosition);
+      controls.getTarget(scratch.tmpTarget, false);
+      controls.getPosition(scratch.tmpPosition, false);
 
       setPivotPlaneAtTarget(scratch.tmpTarget);
 
@@ -333,6 +348,7 @@ export function TrackpadControls(props: {
       if (isOverChrome(event.clientX, event.clientY, event.target)) return;
 
       event.preventDefault();
+      if (swallowIfBlocked(event)) return;
 
       if (event.ctrlKey) {
         lastOrbitAt.current = null;
@@ -373,6 +389,7 @@ export function TrackpadControls(props: {
       const clientX = Number(gestureEvent?.clientX ?? 0);
       const clientY = Number(gestureEvent?.clientY ?? 0);
       if (isOverChrome(clientX, clientY, gestureEvent?.target ?? null)) return;
+      if (swallowIfBlocked(gestureEvent)) return;
 
       gestureEvent.preventDefault?.();
       lastGestureScale.current = Number(gestureEvent?.scale ?? 1);
@@ -383,6 +400,7 @@ export function TrackpadControls(props: {
       const clientX = Number(gestureEvent?.clientX ?? 0);
       const clientY = Number(gestureEvent?.clientY ?? 0);
       if (isOverChrome(clientX, clientY, gestureEvent?.target ?? null)) return;
+      if (swallowIfBlocked(gestureEvent)) return;
 
       gestureEvent.preventDefault?.();
       const scale = Number(gestureEvent?.scale ?? 1);
@@ -420,6 +438,7 @@ export function TrackpadControls(props: {
     gl,
     invalidate,
     controlsRef,
+    inputBlockRef,
     maxDistance,
     minDistance,
     panSpeed,

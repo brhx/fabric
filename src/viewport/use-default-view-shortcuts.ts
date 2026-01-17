@@ -3,10 +3,9 @@ import { matchDefaultViewShortcut, type DefaultViewId } from "./default-views";
 
 export function useDefaultViewShortcuts(options: {
   element: HTMLCanvasElement | null;
-  reset: () => void;
-  requestDefaultView: (id: DefaultViewId) => void;
+  onSelectDefaultView: (id: DefaultViewId) => void;
 }) {
-  const { element, reset, requestDefaultView } = options;
+  const { element, onSelectDefaultView } = options;
 
   useEffect(() => {
     if (!element) return;
@@ -30,13 +29,12 @@ export function useDefaultViewShortcuts(options: {
 
       event.preventDefault();
       event.stopPropagation();
-      reset();
-      requestDefaultView(defaultView.id);
+      onSelectDefaultView(defaultView.id);
     };
 
     view.addEventListener("keydown", onKeyDown, { capture: true });
     return () => {
       view.removeEventListener("keydown", onKeyDown, { capture: true });
     };
-  }, [element, reset, requestDefaultView]);
+  }, [element, onSelectDefaultView]);
 }

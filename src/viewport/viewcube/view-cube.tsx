@@ -18,6 +18,7 @@ import {
   Vector3,
 } from "three";
 import { isPerspectiveCamera } from "../../camera";
+import { stopControlsAtCurrent } from "../camera-controls-utils";
 import { stabilizePoleDirection } from "../pole-nudge";
 import {
   COLOR_AXIS_X,
@@ -68,9 +69,6 @@ export type ViewCubeProps = {
   onRotateAroundUp?: (radians: number) => boolean;
   onOrbitInput?: (azimuthRadians: number, polarRadians: number) => boolean;
   disableSelection?: () => boolean;
-  getWorldDirectionFromLocalDirection?: (
-    localDirection: [number, number, number],
-  ) => [number, number, number];
 };
 
 export type ViewCubeDragState = {
@@ -106,19 +104,10 @@ function ViewCubeHud(
   const pointerClientRef = useRef<{ x: number; y: number } | null>(null);
 
   const [hoverHit, setHoverHit] = useState<ViewCubeHit | null>(null);
-  const getWorldDirectionFromLocalDirection =
-    props.getWorldDirectionFromLocalDirection;
-
-  const localToWorldDirection = useMemo(() => {
-    if (!getWorldDirectionFromLocalDirection)
-      return localDirectionToWorldDirection;
-    return (direction: readonly [number, number, number]) =>
-      getWorldDirectionFromLocalDirection([
-        direction[0],
-        direction[1],
-        direction[2],
-      ]);
-  }, [getWorldDirectionFromLocalDirection]);
+  const localToWorldDirection = useMemo(
+    () => localDirectionToWorldDirection,
+    [],
+  );
 
   const cubeMeshRef = useRef<Mesh | null>(null);
   const scratch = useMemo(
@@ -194,13 +183,14 @@ function ViewCubeHud(
 
       scratch.raycaster.setFromCamera(scratch.pointerNdc, hudCamera);
       const [intersection] = scratch.raycaster.intersectObject(mesh, false);
+      if (!intersection) return null;
 
       return getViewCubeHitFromFaceIndex(
-        intersection?.faceIndex,
+        intersection.faceIndex,
         cubeModel.triangleHits,
       );
     },
-    [cubeModel.triangleHits, gl, scratch],
+    [cubeModel, gl, scratch],
   );
 
   useFrame(({ camera }) => {
@@ -267,10 +257,10 @@ function ViewCubeHud(
 
       // If the user was orbiting with damping/inertia, cancel that motion first
       // so the ViewCube transition starts smoothly without an initial "jump".
-      controls.stop();
+      stopControlsAtCurrent(controls);
 
-      controls.getTarget(scratch.target);
-      controls.getPosition(scratch.position);
+      controls.getTarget(scratch.target, false);
+      controls.getPosition(scratch.position, false);
 
       const radius = scratch.position.distanceTo(scratch.target);
       if (!Number.isFinite(radius) || radius <= 0) return;
@@ -474,7 +464,7 @@ function ViewCubeHud(
             onClick={() => {
               const controls = props.controls.current;
               if (!controls) return;
-              controls.stop();
+              stopControlsAtCurrent(controls);
               const handled = props.onRotateAroundUp?.(Math.PI / 2);
               if (handled) return;
               void controls.rotate(Math.PI / 2, 0, true);
@@ -500,7 +490,7 @@ function ViewCubeHud(
             onClick={() => {
               const controls = props.controls.current;
               if (!controls) return;
-              controls.stop();
+              stopControlsAtCurrent(controls);
               const handled = props.onRotateAroundUp?.(-Math.PI / 2);
               if (handled) return;
               void controls.rotate(-Math.PI / 2, 0, true);
@@ -805,7 +795,23 @@ function useViewCubePointerEvents(options: {
     const isOverUiChrome = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return false;
-      return Boolean(target.closest('button[data-ui-chrome="true"]'));
+      return Boolean(target.closest('[data-ui-chrome="true"]'));
+    };
+
+    const safeSetPointerCapture = (pointerId: number) => {
+      try {
+        element.setPointerCapture?.(pointerId);
+      } catch {
+        // Ignore DOMException (e.g. invalid pointerId / element not in a captureable state).
+      }
+    };
+
+    const safeReleasePointerCapture = (pointerId: number) => {
+      try {
+        element.releasePointerCapture?.(pointerId);
+      } catch {
+        // Ignore DOMException (e.g. not captured).
+      }
     };
 
     const updatePointerClient = (event: PointerEvent) => {
@@ -820,6 +826,7 @@ function useViewCubePointerEvents(options: {
 
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return;
+      if (dragStateRef.current) return;
       if (isOverUiChrome(event)) {
         clearPointerClient();
         updateHoverHit(null);
@@ -829,9 +836,10 @@ function useViewCubePointerEvents(options: {
 
       const hit = getCubeHitFromClientPoint(event.clientX, event.clientY);
       if (!hit) return;
+      if (disableSelection?.()) return;
 
       stopIfHandled(event);
-      element.setPointerCapture?.(event.pointerId);
+      safeSetPointerCapture(event.pointerId);
 
       dragStateRef.current = {
         pointerId: event.pointerId,
@@ -850,13 +858,20 @@ function useViewCubePointerEvents(options: {
       const state = dragStateRef.current;
       if (state) {
         if (state.pointerId !== event.pointerId) return;
+        if (disableSelection?.()) {
+          dragStateRef.current = null;
+          safeReleasePointerCapture(event.pointerId);
+          clearPointerClient();
+          updateHoverHit(null);
+          return;
+        }
 
         updatePointerClient(event);
         stopIfHandled(event);
 
         if (event.pointerType === "mouse" && event.buttons === 0) {
           dragStateRef.current = null;
-          element.releasePointerCapture?.(event.pointerId);
+          safeReleasePointerCapture(event.pointerId);
           updateHoverHit(null);
           return;
         }
@@ -878,7 +893,7 @@ function useViewCubePointerEvents(options: {
 
         if (!state.didDrag) {
           const hit = getCubeHitFromClientPoint(event.clientX, event.clientY);
-          if (hit) state.snapHit = hit;
+          state.snapHit = hit;
           updateHoverHit(hit);
           return;
         }
@@ -901,6 +916,11 @@ function useViewCubePointerEvents(options: {
         updateHoverHit(null);
         return;
       }
+      if (disableSelection?.()) {
+        clearPointerClient();
+        updateHoverHit(null);
+        return;
+      }
 
       updatePointerClient(event);
       const hit = getCubeHitFromClientPoint(event.clientX, event.clientY);
@@ -910,21 +930,17 @@ function useViewCubePointerEvents(options: {
 
     const onPointerUp = (event: PointerEvent) => {
       const state = dragStateRef.current;
-      dragStateRef.current = null;
       if (!state || state.pointerId !== event.pointerId) return;
+      dragStateRef.current = null;
 
       updatePointerClient(event);
       stopIfHandled(event);
-      element.releasePointerCapture?.(event.pointerId);
+      safeReleasePointerCapture(event.pointerId);
 
       if (state.didDrag) return;
 
-      const releaseHit = getCubeHitFromClientPoint(
-        event.clientX,
-        event.clientY,
-      );
-      const snapLocal =
-        releaseHit?.localDirection ?? state.snapHit?.localDirection;
+      const hit = getCubeHitFromClientPoint(event.clientX, event.clientY);
+      const snapLocal = hit?.localDirection ?? state.snapHit?.localDirection;
       const snap = snapLocal ? localToWorldDirection(snapLocal) : null;
       if (!snap) return;
 
@@ -941,19 +957,19 @@ function useViewCubePointerEvents(options: {
 
     const onPointerCancel = (event: PointerEvent) => {
       const state = dragStateRef.current;
-      dragStateRef.current = null;
       if (!state || state.pointerId !== event.pointerId) return;
+      dragStateRef.current = null;
 
       updatePointerClient(event);
       stopIfHandled(event);
-      element.releasePointerCapture?.(event.pointerId);
+      safeReleasePointerCapture(event.pointerId);
       updateHoverHit(null);
     };
 
     const onLostPointerCapture = (event: PointerEvent) => {
       const state = dragStateRef.current;
-      dragStateRef.current = null;
       if (!state || state.pointerId !== event.pointerId) return;
+      dragStateRef.current = null;
       updateHoverHit(null);
     };
 

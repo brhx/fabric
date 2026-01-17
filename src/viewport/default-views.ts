@@ -21,9 +21,8 @@ export const DEFAULT_VIEWS: DefaultView[] = [
     id: "home",
     label: "Home",
     target: [0, 0, 0],
-    // Exact top-down view from above the ground plane with north (+Y) at the top of the screen.
+    // True top-down view with fixed world-up.
     position: [0, 0, 20],
-    up: [0, 1, 0],
     shortcut: {
       metaKey: true,
       ctrlKey: false,
