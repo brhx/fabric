@@ -16,6 +16,7 @@
         "title": "Fabric",
         "width": 1280,
         "height": 768,
+        "visible": false,
         "theme": "Dark",
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
