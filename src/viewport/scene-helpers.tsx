@@ -10,8 +10,8 @@ export function MainScene() {
         <gridHelper args={[200, 20, "#34343a", "#24242a"]} />
       </group>
 
-      <mesh position={[3, 1.5, 1.2]}>
-        <boxGeometry args={[6, 3, 2.4]} />
+      <mesh position={[0, 0, 1.5]}>
+        <boxGeometry args={[3, 3, 3]} />
         <meshNormalMaterial />
       </mesh>
 
