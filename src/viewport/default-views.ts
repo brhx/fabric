@@ -7,8 +7,10 @@ export type KeyboardShortcut = {
   shiftKey?: boolean;
 };
 
+export type DefaultViewId = "home" | "front-right-top";
+
 export type DefaultView = {
-  id: "home";
+  id: DefaultViewId;
   label: string;
   target: [number, number, number];
   position: [number, number, number];
@@ -16,13 +18,16 @@ export type DefaultView = {
   shortcut?: KeyboardShortcut;
 };
 
+const DEFAULT_VIEW_RADIUS = 20;
+const FRONT_RIGHT_TOP_OFFSET = DEFAULT_VIEW_RADIUS / Math.sqrt(3);
+
 export const DEFAULT_VIEWS: DefaultView[] = [
   {
     id: "home",
     label: "Home",
     target: [0, 0, 0],
     // True top-down view with fixed world-up.
-    position: [0, 0, 20],
+    position: [0, 0, DEFAULT_VIEW_RADIUS],
     shortcut: {
       metaKey: true,
       ctrlKey: false,
@@ -32,14 +37,31 @@ export const DEFAULT_VIEWS: DefaultView[] = [
       code: "Digit1",
     },
   },
+  {
+    id: "front-right-top",
+    label: "Front Right Top",
+    target: [0, 0, 0],
+    position: [
+      FRONT_RIGHT_TOP_OFFSET,
+      -FRONT_RIGHT_TOP_OFFSET,
+      FRONT_RIGHT_TOP_OFFSET,
+    ],
+    shortcut: {
+      metaKey: true,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+      key: "2",
+      code: "Digit2",
+    },
+  },
 ];
-
-export type DefaultViewId = DefaultView["id"];
 
 export const DEFAULT_VIEW_ID: DefaultViewId = "home";
 
 const DEFAULT_VIEWS_BY_ID: Record<DefaultViewId, DefaultView> = {
   home: DEFAULT_VIEWS[0],
+  "front-right-top": DEFAULT_VIEWS[1],
 };
 
 export function getDefaultView(
