@@ -404,6 +404,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
         scratch.target.z,
         enableTransition,
       );
+      controls.normalizeRotations();
       if (blockToken !== null) {
         void Promise.all([focalPromise, lookPromise]).finally(() => {
           endInputBlock(blockToken);
@@ -527,6 +528,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
         scratch.target.z,
         enableTransition,
       );
+      controls.normalizeRotations();
       if (blockToken !== null) {
         void lookPromise.finally(() => {
           endInputBlock(blockToken);
@@ -629,6 +631,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
         scratch.target.z,
         true,
       );
+      controls.normalizeRotations();
       void Promise.all([focalPromise, lookPromise]).finally(() => {
         endInputBlock(blockToken);
       });
