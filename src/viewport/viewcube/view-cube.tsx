@@ -462,6 +462,7 @@ function ViewCubeHud(
           <ViewCubeButton
             label="Rotate view left"
             onClick={() => {
+              if (props.disableSelection?.()) return;
               const controls = props.controls.current;
               if (!controls) return;
               stopControlsAtCurrent(controls);
@@ -488,6 +489,7 @@ function ViewCubeHud(
           <ViewCubeButton
             label="Rotate view right"
             onClick={() => {
+              if (props.disableSelection?.()) return;
               const controls = props.controls.current;
               if (!controls) return;
               stopControlsAtCurrent(controls);

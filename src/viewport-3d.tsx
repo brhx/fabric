@@ -137,6 +137,7 @@ function ViewportScene() {
         onSelectDirection={rig.onSelectDirection}
         onOrbitInput={rig.onOrbitInput}
         onRotateAroundUp={rig.onRotateAroundUp}
+        disableSelection={rig.isProjectionTransitionActive}
       />
     </>
   );

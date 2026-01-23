@@ -122,6 +122,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       const orthographic = orthographicCameraRef.current;
       if (!controls || !perspective || !orthographic) return false;
 
+      defaultViewRequestRef.current = null;
       cancelProjectionTransition();
 
       // Freeze any in-flight transitions so we can read a consistent state.
@@ -419,8 +420,14 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
 
   const requestDefaultView = useCallback(
     (viewId?: DefaultViewId) => {
-      interruptInputs();
       const nextViewId = viewId ?? DEFAULT_VIEW_ID;
+      if (projectionTransitionRef.current !== null) {
+        defaultViewRequestRef.current = nextViewId;
+        invalidate();
+        return;
+      }
+
+      interruptInputs();
       const applied = applyDefaultView(nextViewId, true);
       defaultViewRequestRef.current = applied ? null : nextViewId;
       invalidate();
@@ -537,13 +544,16 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
   );
 
   const onOrbitInput = useCallback(
-    (azimuthRadians: number, polarRadians: number) =>
-      orbitAroundUp(azimuthRadians, polarRadians, false),
+    (azimuthRadians: number, polarRadians: number) => {
+      if (projectionTransitionRef.current !== null) return true;
+      return orbitAroundUp(azimuthRadians, polarRadians, false);
+    },
     [orbitAroundUp],
   );
 
   const onRotateAroundUp = useCallback(
     (radians: number) => {
+      if (projectionTransitionRef.current !== null) return true;
       interruptInputs();
       return orbitAroundUp(radians, 0, true);
     },
@@ -554,6 +564,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     (worldDirection: [number, number, number]) => {
       const controls = controlsRef.current;
       if (!controls) return;
+      if (projectionTransitionRef.current !== null) return;
       interruptInputs();
 
       controls.camera.up.copy(WORLD_UP);
@@ -625,6 +636,11 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       invalidate();
     },
     [beginInputBlock, endInputBlock, interruptInputs, invalidate, scratch],
+  );
+
+  const isProjectionTransitionActive = useCallback(
+    () => projectionTransitionRef.current !== null,
+    [],
   );
 
   useFrame(() => {
@@ -793,7 +809,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     }
 
     const defaultViewId = defaultViewRequestRef.current;
-    if (defaultViewId) {
+    if (defaultViewId && projectionTransitionRef.current === null) {
       const applied = applyDefaultView(defaultViewId, true);
       if (applied) {
         defaultViewRequestRef.current = null;
@@ -813,5 +829,6 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     onRotateAroundUp,
     onSelectDirection,
     toggleProjection,
+    isProjectionTransitionActive,
   };
 }
