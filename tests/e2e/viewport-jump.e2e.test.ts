@@ -168,6 +168,13 @@ const waitForFov = async (target: Page, fov: number, timeoutMs: number) => {
   );
 };
 
+const readCamPos = async (target: Page) => {
+  const line = await waitForDebugLine(target, "cam.pos:", 5000);
+  const vec = parseVec3(line);
+  if (!vec) throw new Error("failed to parse " + line);
+  return vec;
+};
+
 const getViewCubeCenter = async (target: Page) =>
   target.evaluate(
     ({
@@ -251,6 +258,71 @@ beforeEach(async () => {
 });
 
 describe.skipIf(!isDarwin)("viewport reset jumpiness", () => {
+  it(
+    "preserves perspective camera position after ortho zoom across repeated toggles",
+    async () => {
+      if (!page) throw new Error("page not ready");
+
+      await ensureDebugEnabled(page);
+
+      await page.keyboard.press("Meta+Digit0");
+      await waitForCameraMode(page, "orthographic", 5000);
+
+      const zoomLineBefore = await waitForDebugLine(page, "zoom:", 5000);
+      const zoomBefore = parseScalarLine(zoomLineBefore);
+      if (zoomBefore === null) throw new Error("failed to parse " + zoomLineBefore);
+
+      const canvas = page.locator("canvas");
+      const bounds = await canvas.boundingBox();
+      if (!bounds) throw new Error("canvas bounds unavailable");
+
+      await page.mouse.move(
+        bounds.x + bounds.width / 2,
+        bounds.y + bounds.height / 2,
+      );
+
+      await page.keyboard.down("Control");
+      await page.mouse.wheel(0, -220);
+      await page.keyboard.up("Control");
+
+      const zoomLineAfter = await waitForDebugLine(page, "zoom:", 5000);
+      const zoomAfter = parseScalarLine(zoomLineAfter);
+      if (zoomAfter === null) throw new Error("failed to parse " + zoomLineAfter);
+      if (Math.abs(zoomAfter - zoomBefore) < 0.001) {
+        throw new Error(
+          "expected ortho zoom to change, before=" +
+            zoomBefore +
+            " after=" +
+            zoomAfter,
+        );
+      }
+
+      await page.keyboard.press("Meta+Digit0");
+      await waitForCameraMode(page, "perspective", 5000);
+      await waitForFov(page, 45, 5000);
+
+      const baselinePos = await readCamPos(page);
+
+      for (let i = 0; i < 3; i += 1) {
+        await page.keyboard.press("Meta+Digit0");
+        await waitForCameraMode(page, "orthographic", 5000);
+
+        await page.keyboard.press("Meta+Digit0");
+        await waitForCameraMode(page, "perspective", 5000);
+        await waitForFov(page, 45, 5000);
+
+        const nextPos = await readCamPos(page);
+        const delta = vecLength({
+          x: nextPos.x - baselinePos.x,
+          y: nextPos.y - baselinePos.y,
+          z: nextPos.z - baselinePos.z,
+        });
+        expect(delta).toBeLessThan(0.02);
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
   it(
     "toggles cmd-0 between perspective (45deg) and orthographic with stable units/px",
     async () => {

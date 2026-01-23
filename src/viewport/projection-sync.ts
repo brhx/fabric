@@ -24,7 +24,7 @@ export function getPerspectiveViewSizeAtPlanePoint(
   const distance = scratch.toPlane.dot(scratch.forward);
   if (!Number.isFinite(distance) || distance <= 0) return null;
 
-  const fovRad = MathUtils.degToRad(camera.fov);
+  const fovRad = MathUtils.degToRad(camera.getEffectiveFOV());
   const height = 2 * distance * Math.tan(fovRad / 2);
   const width = height * camera.aspect;
 
@@ -94,4 +94,3 @@ export function syncPerspectiveCameraFromOrthographic(options: {
 
   return true;
 }
-

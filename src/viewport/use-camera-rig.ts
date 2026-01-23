@@ -153,6 +153,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
           set({ camera: orthographic });
           controls.camera = orthographic;
 
+          void controls.zoomTo(1, false);
           void controls.setFocalOffset(
             scratch.focalOffset.x,
             scratch.focalOffset.y,
@@ -224,7 +225,22 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
         const viewHeight = getOrthographicVisibleHeight(activeCamera);
         if (!Number.isFinite(viewHeight) || viewHeight <= 0) return false;
 
+        const offsetZ = scratch.focalOffset.z;
+        const minDistanceActual = Math.max(0, minDistance + offsetZ);
+        const maxDistanceActual =
+          maxDistance === Infinity ?
+            Infinity
+          : Math.max(minDistanceActual, maxDistance + offsetZ);
+
         if (durationMs <= 0) {
+          const solvedStart = solvePerspectiveDistanceForViewHeight({
+            viewHeight,
+            fovDeg: DEFAULT_PERSPECTIVE_FOV_DEG,
+            minDistance: minDistanceActual,
+            maxDistance: maxDistanceActual,
+          });
+          if (!solvedStart) return false;
+
           const synced = syncPerspectiveCameraFromOrthographic({
             orthographic: activeCamera,
             perspective,
@@ -234,16 +250,17 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
           if (!synced) return false;
 
           perspective.getWorldDirection(scratch.worldDirection);
-          if (scratch.focalOffset.z !== 0) {
-            perspective.position.addScaledVector(
-              scratch.worldDirection,
-              scratch.focalOffset.z,
-            );
-          }
+          scratch.nudge.copy(scratch.worldDirection).multiplyScalar(-1);
+          const baseDistance = solvedStart.distance - offsetZ;
+          if (!Number.isFinite(baseDistance) || baseDistance <= 0) return false;
+          perspective.position
+            .copy(scratch.target)
+            .addScaledVector(scratch.nudge, baseDistance);
 
           set({ camera: perspective });
           controls.camera = perspective;
 
+          void controls.zoomTo(1, false);
           void controls.setFocalOffset(
             scratch.focalOffset.x,
             scratch.focalOffset.y,
@@ -264,13 +281,19 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
           return true;
         }
 
-        const fovStart = Math.max(
+        const fovStartRaw = Math.max(
           minMorphFovDeg,
-          fovDegForViewHeightAtDistance(
-            viewHeight,
-            maxDistance === Infinity ? Infinity : maxDistance + scratch.focalOffset.z,
-          ),
+          fovDegForViewHeightAtDistance(viewHeight, maxDistanceActual),
         );
+        const solvedStart = solvePerspectiveDistanceForViewHeight({
+          viewHeight,
+          fovDeg: fovStartRaw,
+          minDistance: minDistanceActual,
+          maxDistance: maxDistanceActual,
+        });
+        if (!solvedStart) return false;
+
+        const fovStart = solvedStart.fovDeg;
         const fovEnd = DEFAULT_PERSPECTIVE_FOV_DEG;
 
         // Start in a near-ortho telephoto perspective that matches ortho framing,
@@ -284,16 +307,17 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
         if (!synced) return false;
 
         perspective.getWorldDirection(scratch.worldDirection);
-        if (scratch.focalOffset.z !== 0) {
-          perspective.position.addScaledVector(
-            scratch.worldDirection,
-            scratch.focalOffset.z,
-          );
-        }
+        scratch.nudge.copy(scratch.worldDirection).multiplyScalar(-1);
+        const baseDistance = solvedStart.distance - offsetZ;
+        if (!Number.isFinite(baseDistance) || baseDistance <= 0) return false;
+        perspective.position
+          .copy(scratch.target)
+          .addScaledVector(scratch.nudge, baseDistance);
 
         set({ camera: perspective });
         controls.camera = perspective;
 
+        void controls.zoomTo(1, false);
         void controls.setFocalOffset(
           scratch.focalOffset.x,
           scratch.focalOffset.y,
@@ -690,6 +714,7 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
             set({ camera: orthographic });
             controls.camera = orthographic;
 
+            void controls.zoomTo(1, false);
             void controls.setFocalOffset(
               projectionTransition.focalOffset.x,
               projectionTransition.focalOffset.y,
