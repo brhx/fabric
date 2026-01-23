@@ -136,6 +136,38 @@ const waitForFocalLengthBelow = async (
   );
 };
 
+const parseScalarLine = (line: string) => {
+  const match = line.match(/: ([+-]?\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+};
+
+const waitForCameraMode = async (
+  target: Page,
+  mode: "perspective" | "orthographic",
+  timeoutMs: number,
+) => {
+  await waitForDebugPredicate(
+    target,
+    (lines) => findLine(lines, "camera:") === `camera: ${mode}`,
+    timeoutMs,
+  );
+};
+
+const waitForFov = async (target: Page, fov: number, timeoutMs: number) => {
+  await waitForDebugPredicate(
+    target,
+    (lines) => {
+      const line = findLine(lines, "fov:");
+      if (!line) return false;
+      const value = parseScalarLine(line);
+      return value === fov;
+    },
+    timeoutMs,
+  );
+};
+
 const getViewCubeCenter = async (target: Page) =>
   target.evaluate(
     ({
@@ -219,6 +251,66 @@ beforeEach(async () => {
 });
 
 describe.skipIf(!isDarwin)("viewport reset jumpiness", () => {
+  it(
+    "toggles cmd-0 between perspective (45deg) and orthographic with stable units/px",
+    async () => {
+      if (!page) throw new Error("page not ready");
+
+      await ensureDebugEnabled(page);
+
+      const cameraLine0 = await waitForDebugLine(page, "camera:", 5000);
+      expect(cameraLine0).toBe("camera: perspective");
+
+      const fovLine0 = await waitForDebugLine(page, "fov:", 5000);
+      const fov0 = parseScalarLine(fovLine0);
+      expect(fov0).toBe(45);
+
+      const canvas = page.locator("canvas");
+      const bounds = await canvas.boundingBox();
+      if (!bounds) throw new Error("canvas bounds unavailable");
+
+      const pivotX = bounds.x + bounds.width / 2 + 180;
+      const pivotY = bounds.y + bounds.height / 2 + 100;
+      await page.mouse.move(pivotX, pivotY);
+
+      await page.keyboard.down("Shift");
+      await page.mouse.wheel(0, 160);
+      await page.keyboard.up("Shift");
+
+      const focalLine0 = await waitForDebugLine(page, "ctrl.focal:", 2000);
+      const focal0 = parseVec3(focalLine0);
+      if (!focal0 || vecLength(focal0) <= 0.01) {
+        throw new Error(
+          "expected non-zero focal offset before toggle, got: " + focalLine0,
+        );
+      }
+
+      const unitsLine0 = await waitForDebugLine(page, "units/px:", 5000);
+      const units0 = parseScalarLine(unitsLine0);
+      if (units0 === null) throw new Error("failed to parse " + unitsLine0);
+
+      await page.keyboard.press("Meta+Digit0");
+      await waitForCameraMode(page, "orthographic", 5000);
+      await waitForDebugLine(page, "zoom:", 5000);
+      await waitForDebugLine(page, "ortho.height:", 5000);
+
+      const unitsLine1 = await waitForDebugLine(page, "units/px:", 5000);
+      const units1 = parseScalarLine(unitsLine1);
+      if (units1 === null) throw new Error("failed to parse " + unitsLine1);
+      expect(Math.abs(units1 - units0)).toBeLessThan(units0 * 0.01);
+
+      await page.keyboard.press("Meta+Digit0");
+      await waitForCameraMode(page, "perspective", 5000);
+      await waitForFov(page, 45, 5000);
+
+      const unitsLine2 = await waitForDebugLine(page, "units/px:", 5000);
+      const units2 = parseScalarLine(unitsLine2);
+      if (units2 === null) throw new Error("failed to parse " + unitsLine2);
+      expect(Math.abs(units2 - units0)).toBeLessThan(units0 * 0.01);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
   it(
     "keeps cmd-1 reset smooth after orbit + pan",
     async () => {

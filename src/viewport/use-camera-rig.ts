@@ -1,23 +1,35 @@
 import type { CameraControlsImpl } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   MathUtils,
   Matrix4,
+  OrthographicCamera,
   PerspectiveCamera,
   Quaternion,
   Spherical,
   Vector3,
 } from "three";
-import { isPerspectiveCamera } from "../camera";
+import { isOrthographicCamera, isPerspectiveCamera } from "../camera";
 import { stopControlsAtCurrent } from "./camera-controls-utils";
-import { viewHeightForPerspective } from "./camera-math";
+import { fovDegForViewHeightAtDistance, viewHeightForPerspective } from "./camera-math";
+import { DEFAULT_PERSPECTIVE_FOV_DEG } from "./constants";
 import {
   DEFAULT_VIEW_ID,
   getDefaultView,
   type DefaultViewId,
 } from "./default-views";
 import { stabilizePoleDirection } from "./pole-nudge";
+import {
+  getOrthographicVisibleHeight,
+  getPerspectiveViewSizeAtPlanePoint,
+  syncOrthographicCameraFromPerspective,
+  syncPerspectiveCameraFromOrthographic,
+} from "./projection-sync";
+import {
+  easeInOutCubic,
+  solvePerspectiveDistanceForViewHeight,
+} from "./projection-transition";
 import { ZUpFrame, type WorldFrame } from "./world-frame";
 
 const Y_UP = new Vector3(0, 1, 0);
@@ -29,7 +41,23 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
 
   const controlsRef = useRef<CameraControlsImpl | null>(null);
   const perspectiveCameraRef = useRef<PerspectiveCamera | null>(null);
+  const orthographicCameraRef = useRef<OrthographicCamera | null>(null);
   const inputBlockRef = useRef(0);
+  const projectionTransitionRef = useRef<{
+    blockToken: number;
+    to: "perspective" | "orthographic";
+    startedAt: number;
+    durationMs: number;
+    viewHeight: number;
+    fovStart: number;
+    fovEnd: number;
+    minDistance: number;
+    maxDistance: number;
+    target: Vector3;
+    focalOffset: Vector3;
+    dir: Vector3;
+    position: Vector3;
+  } | null>(null);
 
   const defaultViewRequestRef = useRef<DefaultViewId | null>(null);
   const initializedRef = useRef(false);
@@ -66,16 +94,259 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     inputBlockRef.current = 0;
   }, []);
 
+  const cancelProjectionTransition = useCallback(() => {
+    const state = projectionTransitionRef.current;
+    if (!state) return;
+    endInputBlock(state.blockToken);
+    projectionTransitionRef.current = null;
+  }, [endInputBlock]);
+
   const interruptInputs = useCallback(() => {
+    cancelProjectionTransition();
     const controls = controlsRef.current;
     if (controls) stopControlsAtCurrent(controls);
-  }, []);
+  }, [cancelProjectionTransition]);
+
+  useEffect(() => {
+    return () => {
+      cancelProjectionTransition();
+    };
+  }, [cancelProjectionTransition]);
+
+  const toggleProjection = useCallback(
+    (options?: { durationMs?: number }) => {
+      const durationMs = options?.durationMs ?? 420;
+
+      const controls = controlsRef.current;
+      const perspective = perspectiveCameraRef.current;
+      const orthographic = orthographicCameraRef.current;
+      if (!controls || !perspective || !orthographic) return false;
+
+      cancelProjectionTransition();
+
+      // Freeze any in-flight transitions so we can read a consistent state.
+      stopControlsAtCurrent(controls);
+
+      controls.getTarget(scratch.target, false);
+      controls.getPosition(scratch.position, false);
+      controls.getFocalOffset(scratch.focalOffset, false);
+      controls.update(0);
+
+      const minDistance =
+        Number.isFinite(controls.minDistance) ? Math.max(0, controls.minDistance) : 0;
+      const maxDistance =
+        Number.isFinite(controls.maxDistance) ? controls.maxDistance : Infinity;
+
+      const minMorphFovDeg = 1;
+
+      const activeCamera = controls.camera;
+
+      if (isPerspectiveCamera(activeCamera)) {
+        if (durationMs <= 0) {
+          const synced = syncOrthographicCameraFromPerspective({
+            perspective,
+            orthographic,
+            target: scratch.target,
+          });
+          if (!synced) return false;
+
+          set({ camera: orthographic });
+          controls.camera = orthographic;
+
+          void controls.setFocalOffset(
+            scratch.focalOffset.x,
+            scratch.focalOffset.y,
+            scratch.focalOffset.z,
+            false,
+          );
+          void controls.setLookAt(
+            scratch.position.x,
+            scratch.position.y,
+            scratch.position.z,
+            scratch.target.x,
+            scratch.target.y,
+            scratch.target.z,
+            false,
+          );
+          controls.update(0);
+          invalidate();
+          return true;
+        }
+
+        const fovStart = activeCamera.fov;
+        const viewSize = getPerspectiveViewSizeAtPlanePoint(
+          activeCamera,
+          scratch.target,
+        );
+        if (!viewSize) return false;
+        const viewHeight = viewSize.height;
+
+        const maxDistanceActual =
+          maxDistance === Infinity ? Infinity : maxDistance + scratch.focalOffset.z;
+        const fovEnd = Math.max(
+          minMorphFovDeg,
+          fovDegForViewHeightAtDistance(viewHeight, maxDistanceActual),
+        );
+
+        activeCamera.getWorldDirection(scratch.worldDirection);
+        scratch.nudge.copy(scratch.worldDirection).multiplyScalar(-1);
+        if (scratch.nudge.lengthSq() === 0) return false;
+
+        const blockToken = beginInputBlock();
+        projectionTransitionRef.current = {
+          blockToken,
+          to: "orthographic",
+          startedAt: globalThis.performance?.now?.() ?? Date.now(),
+          durationMs,
+          viewHeight,
+          fovStart,
+          fovEnd,
+          minDistance,
+          maxDistance,
+          target: scratch.target.clone(),
+          focalOffset: scratch.focalOffset.clone(),
+          dir: scratch.nudge.clone(),
+          position: new Vector3(),
+        };
+
+        void controls.setFocalOffset(
+          scratch.focalOffset.x,
+          scratch.focalOffset.y,
+          scratch.focalOffset.z,
+          false,
+        );
+
+        invalidate();
+        return true;
+      }
+
+      if (isOrthographicCamera(activeCamera)) {
+        const viewHeight = getOrthographicVisibleHeight(activeCamera);
+        if (!Number.isFinite(viewHeight) || viewHeight <= 0) return false;
+
+        if (durationMs <= 0) {
+          const synced = syncPerspectiveCameraFromOrthographic({
+            orthographic: activeCamera,
+            perspective,
+            target: scratch.target,
+            fovDeg: DEFAULT_PERSPECTIVE_FOV_DEG,
+          });
+          if (!synced) return false;
+
+          perspective.getWorldDirection(scratch.worldDirection);
+          if (scratch.focalOffset.z !== 0) {
+            perspective.position.addScaledVector(
+              scratch.worldDirection,
+              scratch.focalOffset.z,
+            );
+          }
+
+          set({ camera: perspective });
+          controls.camera = perspective;
+
+          void controls.setFocalOffset(
+            scratch.focalOffset.x,
+            scratch.focalOffset.y,
+            scratch.focalOffset.z,
+            false,
+          );
+          void controls.setLookAt(
+            perspective.position.x,
+            perspective.position.y,
+            perspective.position.z,
+            scratch.target.x,
+            scratch.target.y,
+            scratch.target.z,
+            false,
+          );
+          controls.update(0);
+          invalidate();
+          return true;
+        }
+
+        const fovStart = Math.max(
+          minMorphFovDeg,
+          fovDegForViewHeightAtDistance(
+            viewHeight,
+            maxDistance === Infinity ? Infinity : maxDistance + scratch.focalOffset.z,
+          ),
+        );
+        const fovEnd = DEFAULT_PERSPECTIVE_FOV_DEG;
+
+        // Start in a near-ortho telephoto perspective that matches ortho framing,
+        // then widen the FOV while dollying in to keep the view height stable.
+        const synced = syncPerspectiveCameraFromOrthographic({
+          orthographic: activeCamera,
+          perspective,
+          target: scratch.target,
+          fovDeg: fovStart,
+        });
+        if (!synced) return false;
+
+        perspective.getWorldDirection(scratch.worldDirection);
+        if (scratch.focalOffset.z !== 0) {
+          perspective.position.addScaledVector(
+            scratch.worldDirection,
+            scratch.focalOffset.z,
+          );
+        }
+
+        set({ camera: perspective });
+        controls.camera = perspective;
+
+        void controls.setFocalOffset(
+          scratch.focalOffset.x,
+          scratch.focalOffset.y,
+          scratch.focalOffset.z,
+          false,
+        );
+        void controls.setLookAt(
+          perspective.position.x,
+          perspective.position.y,
+          perspective.position.z,
+          scratch.target.x,
+          scratch.target.y,
+          scratch.target.z,
+          false,
+        );
+        controls.update(0);
+
+        scratch.nudge.copy(perspective.position).sub(scratch.target);
+        if (scratch.nudge.lengthSq() === 0) return false;
+        scratch.nudge.normalize();
+
+        const blockToken = beginInputBlock();
+        projectionTransitionRef.current = {
+          blockToken,
+          to: "perspective",
+          startedAt: globalThis.performance?.now?.() ?? Date.now(),
+          durationMs,
+          viewHeight,
+          fovStart,
+          fovEnd,
+          minDistance,
+          maxDistance,
+          target: scratch.target.clone(),
+          focalOffset: scratch.focalOffset.clone(),
+          dir: scratch.nudge.clone(),
+          position: new Vector3(),
+        };
+
+        invalidate();
+        return true;
+      }
+
+      return false;
+    },
+    [beginInputBlock, cancelProjectionTransition, invalidate, scratch, set],
+  );
 
   const applyDefaultView = useCallback(
     (viewId: DefaultViewId, enableTransition: boolean) => {
       const controls = controlsRef.current;
       const perspective = perspectiveCameraRef.current;
-      if (!controls || !perspective) return false;
+      const orthographic = orthographicCameraRef.current;
+      if (!controls || !perspective || !orthographic) return false;
 
       const view = getDefaultView(viewId);
 
@@ -87,10 +358,14 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
       const defaultRadius = scratch.position.distanceTo(scratch.target);
       if (!Number.isFinite(defaultRadius) || defaultRadius <= 0) return false;
 
-      set({ camera: perspective });
-      controls.camera = perspective;
+      const activeCamera = controls.camera;
+      const nextCamera =
+        isOrthographicCamera(activeCamera) ? orthographic : perspective;
 
-      perspective.up.copy(WORLD_UP);
+      set({ camera: nextCamera });
+      controls.camera = nextCamera;
+
+      nextCamera.up.copy(WORLD_UP);
       controls.updateCameraUp();
 
       const blockToken = enableTransition ? beginInputBlock() : null;
@@ -332,6 +607,123 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     const controls = controlsRef.current;
     if (!controls) return;
 
+    const projectionTransition = projectionTransitionRef.current;
+    if (projectionTransition) {
+      const perspective = perspectiveCameraRef.current;
+      const orthographic = orthographicCameraRef.current;
+      if (!perspective || !orthographic) {
+        cancelProjectionTransition();
+        return;
+      }
+
+      const now = (globalThis.performance?.now?.() ?? Date.now()) as number;
+      const t =
+        projectionTransition.durationMs <= 0 ?
+          1
+        : MathUtils.clamp(
+            (now - projectionTransition.startedAt) /
+              projectionTransition.durationMs,
+            0,
+            1,
+          );
+      const eased = easeInOutCubic(t);
+
+      const desiredFov = MathUtils.lerp(
+        projectionTransition.fovStart,
+        projectionTransition.fovEnd,
+        eased,
+      );
+
+      const offsetZ = projectionTransition.focalOffset.z;
+      const minDistanceActual = Math.max(
+        0,
+        projectionTransition.minDistance + offsetZ,
+      );
+      const maxDistanceActual =
+        projectionTransition.maxDistance === Infinity ?
+          Infinity
+        : Math.max(minDistanceActual, projectionTransition.maxDistance + offsetZ);
+
+      const solved = solvePerspectiveDistanceForViewHeight({
+        viewHeight: projectionTransition.viewHeight,
+        fovDeg: desiredFov,
+        minDistance: minDistanceActual,
+        maxDistance: maxDistanceActual,
+      });
+      if (!solved) {
+        cancelProjectionTransition();
+        return;
+      }
+
+      perspective.fov = solved.fovDeg;
+      perspective.updateProjectionMatrix();
+
+      const baseDistance = solved.distance - offsetZ;
+      if (!Number.isFinite(baseDistance) || baseDistance <= 0) {
+        cancelProjectionTransition();
+        return;
+      }
+
+      projectionTransition.position
+        .copy(projectionTransition.target)
+        .addScaledVector(projectionTransition.dir, baseDistance);
+
+      void controls.setLookAt(
+        projectionTransition.position.x,
+        projectionTransition.position.y,
+        projectionTransition.position.z,
+        projectionTransition.target.x,
+        projectionTransition.target.y,
+        projectionTransition.target.z,
+        false,
+      );
+      controls.update(0);
+
+      if (t >= 1) {
+        if (projectionTransition.to === "orthographic") {
+          const synced = syncOrthographicCameraFromPerspective({
+            perspective,
+            orthographic,
+            target: projectionTransition.target,
+          });
+          if (synced) {
+            set({ camera: orthographic });
+            controls.camera = orthographic;
+
+            void controls.setFocalOffset(
+              projectionTransition.focalOffset.x,
+              projectionTransition.focalOffset.y,
+              projectionTransition.focalOffset.z,
+              false,
+            );
+            void controls.setLookAt(
+              projectionTransition.position.x,
+              projectionTransition.position.y,
+              projectionTransition.position.z,
+              projectionTransition.target.x,
+              projectionTransition.target.y,
+              projectionTransition.target.z,
+              false,
+            );
+            controls.update(0);
+          }
+        } else {
+          // Ensure exact final perspective FOV.
+          perspective.fov = DEFAULT_PERSPECTIVE_FOV_DEG;
+          perspective.updateProjectionMatrix();
+        }
+
+        endInputBlock(projectionTransition.blockToken);
+        projectionTransitionRef.current = null;
+      } else {
+        invalidate();
+      }
+
+      // Demand-driven render loop: keep drawing while animating, and refresh once on completion.
+      invalidate();
+      return;
+    }
+
     if (!initializedRef.current) {
       const applied = applyDefaultView(DEFAULT_VIEW_ID, false);
       if (applied) {
@@ -341,17 +733,37 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     }
 
     const viewportHeightPx = Math.max(1, size.height);
-    if (isPerspectiveCamera(controls.camera)) {
+    const activeCamera = controls.camera;
+    if (isPerspectiveCamera(activeCamera)) {
       controls.getPosition(scratch.position, false);
       controls.getTarget(scratch.target, false);
       const distance = scratch.position.distanceTo(scratch.target);
       if (Number.isFinite(distance) && distance > 0) {
         const nextUnitsPerPixel =
-          viewHeightForPerspective(distance, controls.camera.fov) /
+          viewHeightForPerspective(distance, activeCamera.fov) /
           viewportHeightPx;
         if (Number.isFinite(nextUnitsPerPixel) && nextUnitsPerPixel > 0) {
           worldUnitsPerPixelRef.current = nextUnitsPerPixel;
         }
+      }
+    } else if (isOrthographicCamera(activeCamera)) {
+      // Keep ortho aspect in sync with the viewport while preserving view height.
+      const aspect = size.width / viewportHeightPx;
+      const baseHeight = activeCamera.top - activeCamera.bottom;
+      const centerX = (activeCamera.left + activeCamera.right) / 2;
+      const centerY = (activeCamera.top + activeCamera.bottom) / 2;
+      const halfH = baseHeight / 2;
+      const halfW = halfH * aspect;
+      activeCamera.left = centerX - halfW;
+      activeCamera.right = centerX + halfW;
+      activeCamera.top = centerY + halfH;
+      activeCamera.bottom = centerY - halfH;
+      activeCamera.updateProjectionMatrix();
+
+      const visibleH = getOrthographicVisibleHeight(activeCamera);
+      const nextUnitsPerPixel = visibleH / viewportHeightPx;
+      if (Number.isFinite(nextUnitsPerPixel) && nextUnitsPerPixel > 0) {
+        worldUnitsPerPixelRef.current = nextUnitsPerPixel;
       }
     }
 
@@ -368,11 +780,13 @@ export function useCameraRig(options?: { worldFrame?: WorldFrame }) {
     worldFrame,
     controlsRef,
     perspectiveCameraRef,
+    orthographicCameraRef,
     worldUnitsPerPixelRef,
     inputBlockRef,
     requestDefaultView,
     onOrbitInput,
     onRotateAroundUp,
     onSelectDirection,
+    toggleProjection,
   };
 }

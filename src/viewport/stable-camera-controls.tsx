@@ -1,6 +1,6 @@
 import { CameraControlsImpl } from "@react-three/drei";
 import { type ThreeElement, useFrame, useThree } from "@react-three/fiber";
-import { forwardRef, useEffect, useMemo } from "react";
+import { forwardRef, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
 CameraControlsImpl.install({ THREE });
@@ -23,7 +23,13 @@ export const StableCameraControls = forwardRef<
 
   const domElement = events.connected || gl.domElement;
 
-  const controls = useMemo(() => new CameraControlsImpl(camera), [camera]);
+  // Keep controls stable across camera swaps (e.g. perspective <-> orthographic) so
+  // target/zoom/pan state doesn't reset.
+  const initialCameraRef = useRef(camera);
+  const controls = useMemo(
+    () => new CameraControlsImpl(initialCameraRef.current),
+    [],
+  );
 
   useEffect(() => {
     controls.camera = camera;

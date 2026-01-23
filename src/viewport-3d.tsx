@@ -1,11 +1,13 @@
 import {
   CameraControlsImpl,
+  OrthographicCamera as DreiOrthographicCamera,
   PerspectiveCamera as DreiPerspectiveCamera,
 } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
 import {
   CONTROLS_DRAGGING_SMOOTH_TIME,
   CONTROLS_SMOOTH_TIME,
+  DEFAULT_PERSPECTIVE_FOV_DEG,
   MAX_DISTANCE,
   MIN_DISTANCE,
   PAN_SPEED,
@@ -17,6 +19,7 @@ import { TrackpadControls } from "./viewport/trackpad-controls";
 import { useCameraRig } from "./viewport/use-camera-rig";
 import { useDefaultViewShortcuts } from "./viewport/use-default-view-shortcuts";
 import { useOrbitFallbackPlane } from "./viewport/use-orbit-fallback-plane";
+import { useProjectionToggleShortcut } from "./viewport/use-projection-toggle-shortcut";
 import { ViewCube } from "./viewport/viewcube/view-cube";
 import { ViewportDebugOverlay } from "./viewport/viewport-debug-overlay";
 
@@ -56,6 +59,13 @@ function ViewportScene() {
     },
   });
 
+  useProjectionToggleShortcut({
+    element: gl.domElement,
+    onToggleProjection: () => {
+      rig.toggleProjection();
+    },
+  });
+
   return (
     <>
       <DreiPerspectiveCamera
@@ -63,7 +73,19 @@ function ViewportScene() {
         up={[0, 0, 1]}
         near={0.1}
         far={50000}
-        fov={45}
+        fov={DEFAULT_PERSPECTIVE_FOV_DEG}
+      />
+
+      <DreiOrthographicCamera
+        ref={rig.orthographicCameraRef}
+        up={[0, 0, 1]}
+        near={0.1}
+        far={50000}
+        left={-1}
+        right={1}
+        top={1}
+        bottom={-1}
+        zoom={1}
       />
 
       <StableCameraControls
