@@ -1,5 +1,8 @@
 import { MathUtils } from "three";
-import { distanceForViewHeight, fovDegForViewHeightAtDistance } from "./camera-math";
+import {
+  distanceForViewHeight,
+  fovDegForViewHeightAtDistance,
+} from "./camera-math";
 
 export function easeInOutCubic(t: number) {
   if (t <= 0) return 0;
@@ -22,16 +25,18 @@ export function solvePerspectiveDistanceForViewHeight(options: {
     viewHeight,
     MathUtils.degToRad(fovDeg),
   );
-  if (!Number.isFinite(distanceUnclamped) || distanceUnclamped <= 0) return null;
+  if (!Number.isFinite(distanceUnclamped) || distanceUnclamped <= 0)
+    return null;
 
   const distance = MathUtils.clamp(distanceUnclamped, minDistance, maxDistance);
   if (!Number.isFinite(distance) || distance <= 0) return null;
 
   const fov =
-    distance === distanceUnclamped ? fovDeg : fovDegForViewHeightAtDistance(viewHeight, distance);
+    distance === distanceUnclamped ? fovDeg : (
+      fovDegForViewHeightAtDistance(viewHeight, distance)
+    );
 
   if (!Number.isFinite(fov) || fov <= 0) return null;
 
   return { distance, fovDeg: fov };
 }
-

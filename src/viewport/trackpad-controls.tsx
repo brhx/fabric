@@ -223,7 +223,9 @@ export function TrackpadControls(props: {
         controls.getTarget(scratch.tmpTarget, false);
         controls.getPosition(scratch.tmpPosition, false);
 
-        const targetDistance = scratch.tmpPosition.distanceTo(scratch.tmpTarget);
+        const targetDistance = scratch.tmpPosition.distanceTo(
+          scratch.tmpTarget,
+        );
         if (!Number.isFinite(targetDistance) || targetDistance <= 0) return;
 
         const fovInRadians = (activeCamera.fov * Math.PI) / 180;
@@ -365,7 +367,9 @@ export function TrackpadControls(props: {
       scratch.tmpDelta.copy(scratch.tmpZoomBefore).sub(scratch.tmpZoomAfter);
 
       const nextPosition =
-        isPerspectiveCamera(activeCamera) ? scratch.tmpNextPosition : scratch.tmpPosition;
+        isPerspectiveCamera(activeCamera) ?
+          scratch.tmpNextPosition
+        : scratch.tmpPosition;
 
       void controls.setLookAt(
         nextPosition.x + scratch.tmpDelta.x,

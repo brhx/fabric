@@ -1,8 +1,4 @@
-import {
-  CameraControlsImpl,
-  OrthographicCamera as DreiOrthographicCamera,
-  PerspectiveCamera as DreiPerspectiveCamera,
-} from "@react-three/drei";
+import { CameraControlsImpl } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
 import {
   CONTROLS_DRAGGING_SMOOTH_TIME,
@@ -13,6 +9,7 @@ import {
   PAN_SPEED,
   ROTATE_SPEED,
 } from "./viewport/constants";
+import { ProjectionCameraPair } from "./viewport/projection-camera-pair";
 import { MainScene } from "./viewport/scene-helpers";
 import { StableCameraControls } from "./viewport/stable-camera-controls";
 import { TrackpadControls } from "./viewport/trackpad-controls";
@@ -68,24 +65,29 @@ function ViewportScene() {
 
   return (
     <>
-      <DreiPerspectiveCamera
-        ref={rig.perspectiveCameraRef}
-        up={[0, 0, 1]}
-        near={0.1}
-        far={50000}
-        fov={DEFAULT_PERSPECTIVE_FOV_DEG}
-      />
-
-      <DreiOrthographicCamera
-        ref={rig.orthographicCameraRef}
-        up={[0, 0, 1]}
-        near={0.1}
-        far={50000}
-        left={-1}
-        right={1}
-        top={1}
-        bottom={-1}
-        zoom={1}
+      <ProjectionCameraPair
+        ref={rig.cameraPairRef}
+        makeDefault
+        controlsRef={rig.controlsRef}
+        inputBlockRef={rig.inputBlockRef}
+        perspectiveRef={rig.perspectiveCameraRef}
+        orthographicRef={rig.orthographicCameraRef}
+        perspectiveProps={{
+          up: [0, 0, 1],
+          near: 0.1,
+          far: 50000,
+          fov: DEFAULT_PERSPECTIVE_FOV_DEG,
+        }}
+        orthographicProps={{
+          up: [0, 0, 1],
+          near: 0.1,
+          far: 50000,
+          left: -1,
+          right: 1,
+          top: 1,
+          bottom: -1,
+          zoom: 1,
+        }}
       />
 
       <StableCameraControls

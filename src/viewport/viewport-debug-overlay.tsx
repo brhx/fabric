@@ -5,8 +5,8 @@ import type { MutableRefObject, RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Spherical, Vector3 } from "three";
 import { isOrthographicCamera, isPerspectiveCamera } from "../camera";
-import { getOrthographicVisibleHeight } from "./projection-sync";
 import { matchDefaultViewShortcut } from "./default-views";
+import { getOrthographicVisibleHeight } from "./projection-sync";
 import {
   VIEWCUBE_MARGIN_RIGHT_PX,
   VIEWCUBE_MARGIN_TOP_PX,
@@ -304,7 +304,11 @@ export function ViewportDebugOverlay(props: {
     lines.push("Viewport Debug  (toggle: D)");
     lines.push("");
     lines.push(
-      `camera: ${isPersp ? "perspective" : isOrtho ? "orthographic" : "unknown"}`,
+      `camera: ${
+        isPersp ? "perspective"
+        : isOrtho ? "orthographic"
+        : "unknown"
+      }`,
     );
     if (isPersp) lines.push(`fov: ${formatNumber(activeCamera.fov, 2)}°`);
     if (isOrtho) {

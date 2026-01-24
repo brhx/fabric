@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
 import { OrthographicCamera, PerspectiveCamera, Vector3 } from "three";
+import { describe, expect, it } from "vitest";
 import {
   getOrthographicVisibleHeight,
   getOrthographicVisibleWidth,
@@ -38,7 +38,10 @@ describe("projection-sync", () => {
     expect(orthographic.top).toBeCloseTo(viewSize.height / 2, 6);
     expect(orthographic.bottom).toBeCloseTo(-viewSize.height / 2, 6);
 
-    expect(getOrthographicVisibleWidth(orthographic)).toBeCloseTo(viewSize.width, 6);
+    expect(getOrthographicVisibleWidth(orthographic)).toBeCloseTo(
+      viewSize.width,
+      6,
+    );
     expect(getOrthographicVisibleHeight(orthographic)).toBeCloseTo(
       viewSize.height,
       6,
@@ -129,4 +132,3 @@ describe("projection-sync", () => {
     expect(p1.position.z).toBeCloseTo(p0.position.z, 6);
   });
 });
-

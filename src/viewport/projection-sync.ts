@@ -1,4 +1,9 @@
-import { MathUtils, OrthographicCamera, PerspectiveCamera, Vector3 } from "three";
+import {
+  MathUtils,
+  OrthographicCamera,
+  PerspectiveCamera,
+  Vector3,
+} from "three";
 
 const scratch = {
   camPos: new Vector3(),
@@ -28,7 +33,12 @@ export function getPerspectiveViewSizeAtPlanePoint(
   const height = 2 * distance * Math.tan(fovRad / 2);
   const width = height * camera.aspect;
 
-  if (!Number.isFinite(height) || !Number.isFinite(width) || height <= 0 || width <= 0)
+  if (
+    !Number.isFinite(height) ||
+    !Number.isFinite(width) ||
+    height <= 0 ||
+    width <= 0
+  )
     return null;
 
   return { distance, width, height };
@@ -86,7 +96,10 @@ export function syncPerspectiveCameraFromOrthographic(options: {
 
   // Place the perspective camera so the plane through `target` perpendicular to the view
   // direction has the same visible height as the orthographic view.
-  scratch.forward.set(0, 0, -1).applyQuaternion(perspective.quaternion).normalize();
+  scratch.forward
+    .set(0, 0, -1)
+    .applyQuaternion(perspective.quaternion)
+    .normalize();
   perspective.position.copy(target).addScaledVector(scratch.forward, -distance);
 
   perspective.updateProjectionMatrix();

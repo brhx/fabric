@@ -40,4 +40,3 @@ export function useProjectionToggleShortcut(options: {
     };
   }, [element, onToggleProjection]);
 }
-
