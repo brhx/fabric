@@ -338,11 +338,12 @@ export const ProjectionCameraPair = forwardRef<
           });
           if (!solvedStart) return false;
 
+          const fovStart = solvedStart.fovDeg;
           const synced = syncPerspectiveCameraFromOrthographic({
             orthographic: activeCamera,
             perspective,
             target: scratch.target,
-            fovDeg: DEFAULT_PERSPECTIVE_FOV_DEG,
+            fovDeg: fovStart,
           });
           if (!synced) return false;
 
