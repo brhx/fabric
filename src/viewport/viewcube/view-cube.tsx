@@ -1,6 +1,6 @@
 import type { CameraControlsImpl } from "@react-three/drei";
-import { Edges, Html, Hud } from "@react-three/drei";
-import { useFrame, useThree } from "@react-three/fiber";
+import { Edges, Html } from "@react-three/drei";
+import { createPortal, useFrame, useThree } from "@react-three/fiber";
 import type { MutableRefObject, ReactNode, RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LuRotateCcw, LuRotateCw } from "react-icons/lu";
@@ -13,6 +13,7 @@ import {
   type Mesh,
   Quaternion,
   Raycaster,
+  Scene,
   OrthographicCamera as ThreeOrthographicCamera,
   PerspectiveCamera as ThreePerspectiveCamera,
   Vector2,
@@ -26,6 +27,10 @@ import {
   ProjectionCameraPair,
   type ProjectionCameraPairHandle,
 } from "../projection-camera-pair";
+import {
+  type ViewCubeRenderState,
+  useViewCubeRenderSlot,
+} from "../viewport-renderer";
 import {
   COLOR_AXIS_X,
   COLOR_AXIS_Y,
@@ -158,20 +163,42 @@ function getViewCubeHudUpdate(options: {
 
 export function ViewCube(props: ViewCubeProps) {
   const fallbackCamera = useThree((state) => state.camera);
-  return (
-    <Hud renderPriority={1}>
-      <ViewCubeHud {...props} fallbackCamera={fallbackCamera as Camera} />
-    </Hud>
+  const viewCubeRenderSlot = useViewCubeRenderSlot();
+  const viewCubeScene = useMemo(() => new Scene(), []);
+
+  return createPortal(
+    <ViewCubeScene
+      {...props}
+      fallbackCamera={fallbackCamera as Camera}
+      viewCubeScene={viewCubeScene}
+      viewCubeRenderSlot={viewCubeRenderSlot}
+    />,
+    viewCubeScene,
   );
 }
 
-function ViewCubeHud(
+function ViewCubeScene(
   props: ViewCubeProps & {
     fallbackCamera: Camera;
+    viewCubeScene: Scene;
+    viewCubeRenderSlot: MutableRefObject<ViewCubeRenderState | null>;
   },
 ) {
   const { gl, invalidate, size } = useThree();
   const margin = useViewCubeMargins(gl.domElement, invalidate);
+
+  const renderStateRef = useRef<ViewCubeRenderState>({
+    scene: props.viewCubeScene,
+    camera: null,
+  });
+
+  useEffect(() => {
+    return () => {
+      if (props.viewCubeRenderSlot.current === renderStateRef.current) {
+        props.viewCubeRenderSlot.current = null;
+      }
+    };
+  }, [props.viewCubeRenderSlot]);
 
   const hudCameraPairRef = useRef<ProjectionCameraPairHandle | null>(null);
   const orientationRef = useRef<Group | null>(null);
@@ -270,12 +297,13 @@ function ViewCubeHud(
 
   useFrame(({ camera }) => {
     const orientation = orientationRef.current;
-    if (!orientation) return;
     const sourceCamera =
       props.controls.current?.camera ?? props.fallbackCamera ?? camera;
-    sourceCamera.getWorldQuaternion(scratch.quaternion);
-    scratch.quaternion.invert();
-    orientation.quaternion.copy(scratch.quaternion);
+    if (orientation) {
+      sourceCamera.getWorldQuaternion(scratch.quaternion);
+      scratch.quaternion.invert();
+      orientation.quaternion.copy(scratch.quaternion);
+    }
 
     const hudUpdate = getViewCubeHudUpdate({
       sourceCamera,
@@ -337,6 +365,10 @@ function ViewCubeHud(
     if (!drag && pointer) {
       updateHoverHit(getCubeHitFromClientPoint(pointer.x, pointer.y));
     }
+
+    renderStateRef.current.camera =
+      hudCameraPairRef.current?.getActiveCamera() ?? null;
+    props.viewCubeRenderSlot.current = renderStateRef.current;
   });
 
   const moveCameraToWorldDirection = useCallback(

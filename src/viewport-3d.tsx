@@ -19,6 +19,7 @@ import { useOrbitFallbackPlane } from "./viewport/use-orbit-fallback-plane";
 import { useProjectionToggleShortcut } from "./viewport/use-projection-toggle-shortcut";
 import { ViewCube } from "./viewport/viewcube/view-cube";
 import { ViewportDebugOverlay } from "./viewport/viewport-debug-overlay";
+import { ViewportRenderProvider } from "./viewport/viewport-renderer";
 
 export function Viewport3D(props: { className?: string }) {
   return (
@@ -64,7 +65,7 @@ function ViewportScene() {
   });
 
   return (
-    <>
+    <ViewportRenderProvider>
       <ProjectionCameraPair
         ref={rig.cameraPairRef}
         makeDefault
@@ -141,6 +142,6 @@ function ViewportScene() {
         onRotateAroundUp={rig.onRotateAroundUp}
         disableSelection={rig.isProjectionTransitionActive}
       />
-    </>
+    </ViewportRenderProvider>
   );
 }
