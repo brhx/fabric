@@ -8,7 +8,6 @@ import { Toolbar, ToolbarButton } from "./chrome/toolbar";
 import {
   LEFT_TOOLBAR_GROUPS,
   RIGHT_TOOLBAR_GROUPS,
-  TOOLBAR_ICON_CLASSNAME,
 } from "./chrome/toolbar-config";
 import { Viewport3D } from "./viewport-3d";
 
@@ -77,7 +76,7 @@ function App() {
                         : undefined
                       }
                     >
-                      <button.Icon className={TOOLBAR_ICON_CLASSNAME} />
+                      <button.Icon className="h-5 w-5" />
                     </ToolbarButton>
                   ))}
                 </Toolbar>
@@ -89,7 +88,7 @@ function App() {
                 <Toolbar key={group.key} showLabelsOnHover labelSide="left">
                   {group.buttons.map((button) => (
                     <ToolbarButton key={button.key} label={button.label}>
-                      <button.Icon className={TOOLBAR_ICON_CLASSNAME} />
+                      <button.Icon className="h-5 w-5" />
                     </ToolbarButton>
                   ))}
                 </Toolbar>

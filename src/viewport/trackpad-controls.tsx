@@ -4,7 +4,9 @@ import type { RefObject } from "react";
 import { useEffect, useMemo, useRef } from "react";
 import type { Camera } from "three";
 import { MathUtils, Object3D, Plane, Raycaster, Vector2, Vector3 } from "three";
-import { isPerspectiveCamera } from "../camera";
+import { isOrthographicCamera, isPerspectiveCamera } from "../camera";
+import { viewHeightForPerspective } from "./camera-math";
+import { DEFAULT_PERSPECTIVE_FOV_DEG } from "./constants";
 import type { WorldFrame } from "./world-frame";
 
 export type OrbitFallbackPlaneContext = {
@@ -215,21 +217,30 @@ export function TrackpadControls(props: {
 
       const viewportHeight = Math.max(1, element.clientHeight);
 
-      let distanceScale = 0;
+      let unitsPerPixel = 0;
       const activeCamera = getActiveCamera();
-      if (!isPerspectiveCamera(activeCamera)) return;
-      controls.getTarget(scratch.tmpTarget, false);
-      controls.getPosition(scratch.tmpPosition, false);
+      if (isPerspectiveCamera(activeCamera)) {
+        controls.getTarget(scratch.tmpTarget, false);
+        controls.getPosition(scratch.tmpPosition, false);
 
-      const targetDistance = scratch.tmpPosition.distanceTo(scratch.tmpTarget);
-      if (!Number.isFinite(targetDistance) || targetDistance <= 0) return;
+        const targetDistance = scratch.tmpPosition.distanceTo(
+          scratch.tmpTarget,
+        );
+        if (!Number.isFinite(targetDistance) || targetDistance <= 0) return;
 
-      const fovInRadians = (activeCamera.fov * Math.PI) / 180;
-      distanceScale =
-        (2 * targetDistance * Math.tan(fovInRadians / 2)) / viewportHeight;
+        const fovInRadians = (activeCamera.fov * Math.PI) / 180;
+        unitsPerPixel =
+          (2 * targetDistance * Math.tan(fovInRadians / 2)) / viewportHeight;
+      } else if (isOrthographicCamera(activeCamera)) {
+        const baseHeight = activeCamera.top - activeCamera.bottom;
+        const visibleHeight = baseHeight / activeCamera.zoom;
+        unitsPerPixel = visibleHeight / viewportHeight;
+      } else {
+        return;
+      }
 
-      const panX = deltaX * distanceScale * panSpeed;
-      const panY = deltaY * distanceScale * panSpeed;
+      const panX = deltaX * unitsPerPixel * panSpeed;
+      const panY = deltaY * unitsPerPixel * panSpeed;
 
       const shouldRebase = Boolean(onRenderPan);
       if (shouldRebase) {
@@ -285,33 +296,57 @@ export function TrackpadControls(props: {
         scratch.tmpZoomBefore,
       );
 
-      if (!isPerspectiveCamera(activeCamera)) return;
-      scratch.tmpOffset.copy(scratch.tmpPosition).sub(scratch.tmpTarget);
-      const currentDistance = scratch.tmpOffset.length();
-      if (!Number.isFinite(currentDistance) || currentDistance <= 0) return;
-
       const zoomFactor = Math.exp(deltaY * 0.001);
-      const nextDistance = MathUtils.clamp(
-        currentDistance * zoomFactor,
-        minDistance,
-        maxDistance,
-      );
+      if (isPerspectiveCamera(activeCamera)) {
+        scratch.tmpOffset.copy(scratch.tmpPosition).sub(scratch.tmpTarget);
+        const currentDistance = scratch.tmpOffset.length();
+        if (!Number.isFinite(currentDistance) || currentDistance <= 0) return;
 
-      scratch.tmpOffset.normalize();
-      scratch.tmpNextPosition
-        .copy(scratch.tmpTarget)
-        .addScaledVector(scratch.tmpOffset, nextDistance);
+        const nextDistance = MathUtils.clamp(
+          currentDistance * zoomFactor,
+          minDistance,
+          maxDistance,
+        );
 
-      void controls.setLookAt(
-        scratch.tmpNextPosition.x,
-        scratch.tmpNextPosition.y,
-        scratch.tmpNextPosition.z,
-        scratch.tmpTarget.x,
-        scratch.tmpTarget.y,
-        scratch.tmpTarget.z,
-        false,
-      );
-      controls.update(0);
+        scratch.tmpOffset.normalize();
+        scratch.tmpNextPosition
+          .copy(scratch.tmpTarget)
+          .addScaledVector(scratch.tmpOffset, nextDistance);
+
+        void controls.setLookAt(
+          scratch.tmpNextPosition.x,
+          scratch.tmpNextPosition.y,
+          scratch.tmpNextPosition.z,
+          scratch.tmpTarget.x,
+          scratch.tmpTarget.y,
+          scratch.tmpTarget.z,
+          false,
+        );
+        controls.update(0);
+      } else if (isOrthographicCamera(activeCamera)) {
+        const baseHeight = activeCamera.top - activeCamera.bottom;
+        const minVisibleHeight = viewHeightForPerspective(
+          minDistance,
+          DEFAULT_PERSPECTIVE_FOV_DEG,
+        );
+        const maxVisibleHeight = viewHeightForPerspective(
+          maxDistance,
+          DEFAULT_PERSPECTIVE_FOV_DEG,
+        );
+        const minZoom = baseHeight / maxVisibleHeight;
+        const maxZoom = baseHeight / minVisibleHeight;
+
+        const currentZoom = activeCamera.zoom;
+        const unclamped = currentZoom / zoomFactor;
+        const nextZoom = MathUtils.clamp(unclamped, minZoom, maxZoom);
+        if (!Number.isFinite(nextZoom) || nextZoom === currentZoom) return;
+
+        void controls.zoomTo(nextZoom, false);
+        controls.update(0);
+        activeCamera.updateProjectionMatrix();
+      } else {
+        return;
+      }
 
       if (!hitBefore) {
         invalidate();
@@ -331,10 +366,15 @@ export function TrackpadControls(props: {
 
       scratch.tmpDelta.copy(scratch.tmpZoomBefore).sub(scratch.tmpZoomAfter);
 
+      const nextPosition =
+        isPerspectiveCamera(activeCamera) ?
+          scratch.tmpNextPosition
+        : scratch.tmpPosition;
+
       void controls.setLookAt(
-        scratch.tmpNextPosition.x + scratch.tmpDelta.x,
-        scratch.tmpNextPosition.y + scratch.tmpDelta.y,
-        scratch.tmpNextPosition.z + scratch.tmpDelta.z,
+        nextPosition.x + scratch.tmpDelta.x,
+        nextPosition.y + scratch.tmpDelta.y,
+        nextPosition.z + scratch.tmpDelta.z,
         scratch.tmpTarget.x + scratch.tmpDelta.x,
         scratch.tmpTarget.y + scratch.tmpDelta.y,
         scratch.tmpTarget.z + scratch.tmpDelta.z,

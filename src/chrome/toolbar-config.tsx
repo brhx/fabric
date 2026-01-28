@@ -31,8 +31,6 @@ export type ToolbarGroupConfig = {
   buttons: readonly ToolbarButtonConfig[];
 };
 
-export const TOOLBAR_ICON_CLASSNAME = "h-5 w-5";
-
 export const LEFT_TOOLBAR_GROUPS: readonly ToolbarGroupConfig[] = [
   {
     key: "left-top",

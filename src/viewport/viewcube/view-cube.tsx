@@ -1,6 +1,6 @@
 import type { CameraControlsImpl } from "@react-three/drei";
-import { Edges, Html, Hud, PerspectiveCamera } from "@react-three/drei";
-import { useFrame, useThree } from "@react-three/fiber";
+import { Edges, Html } from "@react-three/drei";
+import { createPortal, useFrame, useThree } from "@react-three/fiber";
 import type { MutableRefObject, ReactNode, RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LuRotateCcw, LuRotateCw } from "react-icons/lu";
@@ -13,13 +13,24 @@ import {
   type Mesh,
   Quaternion,
   Raycaster,
+  Scene,
+  OrthographicCamera as ThreeOrthographicCamera,
   PerspectiveCamera as ThreePerspectiveCamera,
   Vector2,
   Vector3,
 } from "three";
-import { isPerspectiveCamera } from "../../camera";
+import { isOrthographicCamera, isPerspectiveCamera } from "../../camera";
 import { stopControlsAtCurrent } from "../camera-controls-utils";
+import { distanceForViewHeight } from "../camera-math";
 import { stabilizePoleDirection } from "../pole-nudge";
+import {
+  ProjectionCameraPair,
+  type ProjectionCameraPairHandle,
+} from "../projection-camera-pair";
+import {
+  type ViewCubeRenderState,
+  useViewCubeRenderSlot,
+} from "../viewport-renderer";
 import {
   COLOR_AXIS_X,
   COLOR_AXIS_Y,
@@ -81,24 +92,115 @@ export type ViewCubeDragState = {
   snapHit: ViewCubeHit | null;
 };
 
+type ViewCubeHudUpdate =
+  | {
+      mode: "orthographic";
+      viewHeight: number;
+      viewOffset: ViewCubeViewOffset;
+    }
+  | {
+      mode: "perspective";
+      viewHeight: number;
+      viewOffset: ViewCubeViewOffset;
+      fovDeg: number;
+      distance: number;
+    };
+
+type ViewCubeViewOffset = {
+  fullWidth: number;
+  fullHeight: number;
+  offsetX: number;
+  offsetY: number;
+  width: number;
+  height: number;
+};
+
+function getViewCubeHudUpdate(options: {
+  sourceCamera: Camera;
+  canvasWidth: number;
+  canvasHeight: number;
+  margin: [number, number];
+}): ViewCubeHudUpdate | null {
+  const { sourceCamera, canvasWidth, canvasHeight, margin } = options;
+
+  if (canvasWidth <= 0 || canvasHeight <= 0) return null;
+
+  const viewHeight = canvasHeight * VIEWCUBE_PERSPECTIVE_DISTANCE_SCALE;
+
+  const viewOffset: ViewCubeViewOffset = {
+    fullWidth: canvasWidth,
+    fullHeight: canvasHeight,
+    offsetX: margin[0] - canvasWidth / 2,
+    offsetY: canvasHeight / 2 - margin[1],
+    width: canvasWidth,
+    height: canvasHeight,
+  };
+
+  if (isOrthographicCamera(sourceCamera)) {
+    return { mode: "orthographic", viewHeight, viewOffset };
+  }
+
+  if (!isPerspectiveCamera(sourceCamera)) return null;
+
+  const mainFovDeg = sourceCamera.fov;
+  if (!Number.isFinite(mainFovDeg) || mainFovDeg <= 0) return null;
+
+  const viewCubeFovDeg = MathUtils.clamp(mainFovDeg + 25, 55, 95);
+  const distance = distanceForViewHeight(
+    viewHeight,
+    MathUtils.degToRad(viewCubeFovDeg),
+  );
+  if (!Number.isFinite(distance) || distance <= 0) return null;
+
+  return {
+    mode: "perspective",
+    viewHeight,
+    viewOffset,
+    fovDeg: viewCubeFovDeg,
+    distance,
+  };
+}
+
 export function ViewCube(props: ViewCubeProps) {
   const fallbackCamera = useThree((state) => state.camera);
-  return (
-    <Hud renderPriority={1}>
-      <ViewCubeHud {...props} fallbackCamera={fallbackCamera as Camera} />
-    </Hud>
+  const viewCubeRenderSlot = useViewCubeRenderSlot();
+  const viewCubeScene = useMemo(() => new Scene(), []);
+
+  return createPortal(
+    <ViewCubeScene
+      {...props}
+      fallbackCamera={fallbackCamera as Camera}
+      viewCubeScene={viewCubeScene}
+      viewCubeRenderSlot={viewCubeRenderSlot}
+    />,
+    viewCubeScene,
   );
 }
 
-function ViewCubeHud(
+function ViewCubeScene(
   props: ViewCubeProps & {
     fallbackCamera: Camera;
+    viewCubeScene: Scene;
+    viewCubeRenderSlot: MutableRefObject<ViewCubeRenderState | null>;
   },
 ) {
   const { gl, invalidate, size } = useThree();
   const margin = useViewCubeMargins(gl.domElement, invalidate);
 
-  const hudPerspectiveCameraRef = useRef<ThreePerspectiveCamera | null>(null);
+  const renderStateRef = useRef<ViewCubeRenderState>({
+    scene: props.viewCubeScene,
+    camera: null,
+  });
+
+  useEffect(() => {
+    return () => {
+      if (props.viewCubeRenderSlot.current === renderStateRef.current) {
+        props.viewCubeRenderSlot.current = null;
+      }
+    };
+  }, [props.viewCubeRenderSlot]);
+
+  const hudCameraPairRef = useRef<ProjectionCameraPairHandle | null>(null);
   const orientationRef = useRef<Group | null>(null);
   const dragStateRef = useRef<ViewCubeDragState | null>(null);
   const pointerClientRef = useRef<{ x: number; y: number } | null>(null);
@@ -155,7 +257,7 @@ function ViewCubeHud(
   const getCubeHitFromClientPoint = useCallback(
     (clientX: number, clientY: number): ViewCubeHit | null => {
       const mesh = cubeMeshRef.current;
-      const hudCamera = hudPerspectiveCameraRef.current;
+      const hudCamera = hudCameraPairRef.current?.getActiveCamera();
       if (!mesh || !hudCamera) return null;
 
       const rect = gl.domElement.getBoundingClientRect();
@@ -195,52 +297,67 @@ function ViewCubeHud(
 
   useFrame(({ camera }) => {
     const orientation = orientationRef.current;
-    if (!orientation) return;
     const sourceCamera =
       props.controls.current?.camera ?? props.fallbackCamera ?? camera;
-    sourceCamera.getWorldQuaternion(scratch.quaternion);
-    scratch.quaternion.invert();
-    orientation.quaternion.copy(scratch.quaternion);
-
-    const canvasWidth = size.width;
-    const canvasHeight = size.height;
-    if (canvasWidth > 0 && canvasHeight > 0) {
-      const viewOffsetX = margin[0] - canvasWidth / 2;
-      const viewOffsetY = canvasHeight / 2 - margin[1];
-
-      const hudPerspective = hudPerspectiveCameraRef.current;
-      if (hudPerspective) {
-        hudPerspective.setViewOffset(
-          canvasWidth,
-          canvasHeight,
-          viewOffsetX,
-          viewOffsetY,
-          canvasWidth,
-          canvasHeight,
-        );
-      }
+    if (orientation) {
+      sourceCamera.getWorldQuaternion(scratch.quaternion);
+      scratch.quaternion.invert();
+      orientation.quaternion.copy(scratch.quaternion);
     }
-    if (isPerspectiveCamera(sourceCamera)) {
-      const hudPerspective = hudPerspectiveCameraRef.current;
-      if (!hudPerspective) return;
 
-      const mainFovDeg = sourceCamera.fov;
-      if (!Number.isFinite(mainFovDeg) || mainFovDeg <= 0) return;
+    const hudUpdate = getViewCubeHudUpdate({
+      sourceCamera,
+      canvasWidth: size.width,
+      canvasHeight: size.height,
+      margin,
+    });
 
-      const viewCubeFovDeg = MathUtils.clamp(mainFovDeg + 25, 55, 95);
+    if (hudUpdate) {
+      const hudPair = hudCameraPairRef.current;
+      const applyViewOffset = (
+        hudCamera: ThreePerspectiveCamera | ThreeOrthographicCamera,
+      ) => {
+        hudCamera.setViewOffset(
+          hudUpdate.viewOffset.fullWidth,
+          hudUpdate.viewOffset.fullHeight,
+          hudUpdate.viewOffset.offsetX,
+          hudUpdate.viewOffset.offsetY,
+          hudUpdate.viewOffset.width,
+          hudUpdate.viewOffset.height,
+        );
+      };
 
-      const fovRad = MathUtils.degToRad(viewCubeFovDeg);
-      const denom = 2 * Math.tan(fovRad / 2);
-      if (!Number.isFinite(denom) || denom === 0) return;
+      if (hudUpdate.mode === "orthographic") {
+        const hudOrtho = hudPair?.getOrthographicCamera();
+        if (hudOrtho) {
+          const aspect = size.width / size.height;
+          const halfH = hudUpdate.viewHeight / 2;
+          const halfW = halfH * aspect;
 
-      const distance =
-        (size.height / denom) * VIEWCUBE_PERSPECTIVE_DISTANCE_SCALE;
-      if (!Number.isFinite(distance) || distance <= 0) return;
+          applyViewOffset(hudOrtho);
+          hudOrtho.left = -halfW;
+          hudOrtho.right = halfW;
+          hudOrtho.top = halfH;
+          hudOrtho.bottom = -halfH;
+          hudOrtho.zoom = 1;
+          hudOrtho.position.set(0, 0, 2000);
+          hudOrtho.lookAt(0, 0, 0);
+          hudOrtho.updateProjectionMatrix();
 
-      hudPerspective.fov = viewCubeFovDeg;
-      hudPerspective.position.set(0, 0, distance);
-      hudPerspective.lookAt(0, 0, 0);
-      hudPerspective.updateProjectionMatrix();
+          hudPair?.setProjection("orthographic");
+        }
+      } else {
+        const hudPerspective = hudPair?.getPerspectiveCamera();
+        if (hudPerspective) {
+          applyViewOffset(hudPerspective);
+          hudPerspective.fov = hudUpdate.fovDeg;
+          hudPerspective.position.set(0, 0, hudUpdate.distance);
+          hudPerspective.lookAt(0, 0, 0);
+          hudPerspective.updateProjectionMatrix();
+
+          hudPair?.setProjection("perspective");
+        }
+      }
     }
 
     const drag = dragStateRef.current;
@@ -248,6 +365,10 @@ function ViewCubeHud(
     if (!drag && pointer) {
       updateHoverHit(getCubeHitFromClientPoint(pointer.x, pointer.y));
     }
+
+    renderStateRef.current.camera =
+      hudCameraPairRef.current?.getActiveCamera() ?? null;
+    props.viewCubeRenderSlot.current = renderStateRef.current;
   });
 
   const moveCameraToWorldDirection = useCallback(
@@ -324,15 +445,25 @@ function ViewCubeHud(
 
   return (
     <>
-      <PerspectiveCamera
-        ref={(node) => {
-          hudPerspectiveCameraRef.current = node;
-        }}
+      <ProjectionCameraPair
+        ref={hudCameraPairRef}
         makeDefault
-        position={[0, 0, 2000]}
-        fov={45}
-        near={0.1}
-        far={50000}
+        perspectiveProps={{
+          position: [0, 0, 2000],
+          fov: 45,
+          near: 0.1,
+          far: 50000,
+        }}
+        orthographicProps={{
+          position: [0, 0, 2000],
+          near: 0.1,
+          far: 50000,
+          left: -1,
+          right: 1,
+          top: 1,
+          bottom: -1,
+          zoom: 1,
+        }}
       />
 
       <group>
@@ -462,6 +593,7 @@ function ViewCubeHud(
           <ViewCubeButton
             label="Rotate view left"
             onClick={() => {
+              if (props.disableSelection?.()) return;
               const controls = props.controls.current;
               if (!controls) return;
               stopControlsAtCurrent(controls);
@@ -488,6 +620,7 @@ function ViewCubeHud(
           <ViewCubeButton
             label="Rotate view right"
             onClick={() => {
+              if (props.disableSelection?.()) return;
               const controls = props.controls.current;
               if (!controls) return;
               stopControlsAtCurrent(controls);

@@ -136,6 +136,134 @@ const waitForFocalLengthBelow = async (
   );
 };
 
+const parseScalarLine = (line: string) => {
+  const match = line.match(/: ([+-]?\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+};
+
+const waitForCameraMode = async (
+  target: Page,
+  mode: "perspective" | "orthographic",
+  timeoutMs: number,
+) => {
+  await waitForDebugPredicate(
+    target,
+    (lines) => findLine(lines, "camera:") === `camera: ${mode}`,
+    timeoutMs,
+  );
+};
+
+const ensureCameraMode = async (
+  target: Page,
+  mode: "perspective" | "orthographic",
+) => {
+  const line = await waitForDebugLine(target, "camera:", 5000);
+  if (line !== `camera: ${mode}`) {
+    await target.keyboard.press("Meta+Digit0");
+    await waitForCameraMode(target, mode, 5000);
+  }
+};
+
+const waitForFov = async (target: Page, fov: number, timeoutMs: number) => {
+  await waitForDebugPredicate(
+    target,
+    (lines) => {
+      const line = findLine(lines, "fov:");
+      if (!line) return false;
+      const value = parseScalarLine(line);
+      return value === fov;
+    },
+    timeoutMs,
+  );
+};
+
+const waitForControlsSettled = async (target: Page, timeoutMs: number) => {
+  await waitForDebugPredicate(
+    target,
+    (lines) => {
+      const pos = findLine(lines, "d.ctrl.pos:");
+      const focal = findLine(lines, "d.ctrl.focal:");
+      const sph = findLine(lines, "d.ctrl.sph:");
+      if (!pos || !focal || !sph) return false;
+      const posDelta = parseScalarLine(pos) ?? Infinity;
+      const focalDelta = parseScalarLine(focal) ?? Infinity;
+      const sphMatch = sph.match(
+        /dr=([+-]?\d+(?:\.\d+)?), dphi=([+-]?\d+(?:\.\d+)?), dtheta=([+-]?\d+(?:\.\d+)?)/,
+      );
+      if (!sphMatch) return false;
+      const sphDelta = {
+        dr: Number(sphMatch[1]),
+        dphi: Number(sphMatch[2]),
+        dtheta: Number(sphMatch[3]),
+      };
+      if (!Number.isFinite(posDelta) || !Number.isFinite(focalDelta))
+        return false;
+      if (
+        !Number.isFinite(sphDelta.dr) ||
+        !Number.isFinite(sphDelta.dphi) ||
+        !Number.isFinite(sphDelta.dtheta)
+      ) {
+        return false;
+      }
+      const threshold = 0.001;
+      return (
+        Math.abs(posDelta) <= threshold &&
+        Math.abs(focalDelta) <= threshold &&
+        Math.abs(sphDelta.dr) <= threshold &&
+        Math.abs(sphDelta.dphi) <= threshold &&
+        Math.abs(sphDelta.dtheta) <= threshold
+      );
+    },
+    timeoutMs,
+  );
+};
+
+const readUnitsPerPixel = async (target: Page) => {
+  const line = await waitForDebugLine(target, "units/px:", 5000);
+  const value = parseScalarLine(line);
+  if (value === null) throw new Error("failed to parse " + line);
+  return value;
+};
+
+const zoomOut = async (target: Page) => {
+  const before = await readUnitsPerPixel(target);
+  const canvas = target.locator("canvas");
+  const bounds = await canvas.boundingBox();
+  if (!bounds) throw new Error("canvas bounds unavailable");
+
+  await target.mouse.move(
+    bounds.x + bounds.width / 2,
+    bounds.y + bounds.height / 2,
+  );
+
+  await target.keyboard.down("Control");
+  for (let i = 0; i < 3; i += 1) {
+    await target.mouse.wheel(0, 240);
+  }
+  await target.keyboard.up("Control");
+
+  await waitForDebugPredicate(
+    target,
+    (lines) => {
+      const line = findLine(lines, "units/px:");
+      if (!line) return false;
+      const value = parseScalarLine(line);
+      if (value === null) return false;
+      return Math.abs(value - before) > before * 0.01;
+    },
+    2000,
+  );
+};
+
+const readCamPos = async (target: Page) => {
+  const line = await waitForDebugLine(target, "cam.pos:", 5000);
+  const vec = parseVec3(line);
+  if (!vec) throw new Error("failed to parse " + line);
+  return vec;
+};
+
 const getViewCubeCenter = async (target: Page) =>
   target.evaluate(
     ({
@@ -220,6 +348,133 @@ beforeEach(async () => {
 
 describe.skipIf(!isDarwin)("viewport reset jumpiness", () => {
   it(
+    "preserves perspective camera position after ortho zoom across repeated toggles",
+    async () => {
+      if (!page) throw new Error("page not ready");
+
+      await ensureDebugEnabled(page);
+
+      await page.keyboard.press("Meta+Digit0");
+      await waitForCameraMode(page, "orthographic", 5000);
+
+      const zoomLineBefore = await waitForDebugLine(page, "zoom:", 5000);
+      const zoomBefore = parseScalarLine(zoomLineBefore);
+      if (zoomBefore === null)
+        throw new Error("failed to parse " + zoomLineBefore);
+
+      const canvas = page.locator("canvas");
+      const bounds = await canvas.boundingBox();
+      if (!bounds) throw new Error("canvas bounds unavailable");
+
+      await page.mouse.move(
+        bounds.x + bounds.width / 2,
+        bounds.y + bounds.height / 2,
+      );
+
+      await page.keyboard.down("Control");
+      await page.mouse.wheel(0, -220);
+      await page.keyboard.up("Control");
+
+      const zoomLineAfter = await waitForDebugLine(page, "zoom:", 5000);
+      const zoomAfter = parseScalarLine(zoomLineAfter);
+      if (zoomAfter === null)
+        throw new Error("failed to parse " + zoomLineAfter);
+      if (Math.abs(zoomAfter - zoomBefore) < 0.001) {
+        throw new Error(
+          "expected ortho zoom to change, before=" +
+            zoomBefore +
+            " after=" +
+            zoomAfter,
+        );
+      }
+
+      await page.keyboard.press("Meta+Digit0");
+      await waitForCameraMode(page, "perspective", 5000);
+      await waitForFov(page, 45, 5000);
+
+      const baselinePos = await readCamPos(page);
+
+      for (let i = 0; i < 3; i += 1) {
+        await page.keyboard.press("Meta+Digit0");
+        await waitForCameraMode(page, "orthographic", 5000);
+
+        await page.keyboard.press("Meta+Digit0");
+        await waitForCameraMode(page, "perspective", 5000);
+        await waitForFov(page, 45, 5000);
+
+        const nextPos = await readCamPos(page);
+        const delta = vecLength({
+          x: nextPos.x - baselinePos.x,
+          y: nextPos.y - baselinePos.y,
+          z: nextPos.z - baselinePos.z,
+        });
+        expect(delta).toBeLessThan(0.02);
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "toggles cmd-0 between perspective (45deg) and orthographic with stable units/px",
+    async () => {
+      if (!page) throw new Error("page not ready");
+
+      await ensureDebugEnabled(page);
+
+      const cameraLine0 = await waitForDebugLine(page, "camera:", 5000);
+      expect(cameraLine0).toBe("camera: perspective");
+
+      const fovLine0 = await waitForDebugLine(page, "fov:", 5000);
+      const fov0 = parseScalarLine(fovLine0);
+      expect(fov0).toBe(45);
+
+      const canvas = page.locator("canvas");
+      const bounds = await canvas.boundingBox();
+      if (!bounds) throw new Error("canvas bounds unavailable");
+
+      const pivotX = bounds.x + bounds.width / 2 + 180;
+      const pivotY = bounds.y + bounds.height / 2 + 100;
+      await page.mouse.move(pivotX, pivotY);
+
+      await page.keyboard.down("Shift");
+      await page.mouse.wheel(0, 160);
+      await page.keyboard.up("Shift");
+
+      const focalLine0 = await waitForDebugLine(page, "ctrl.focal:", 2000);
+      const focal0 = parseVec3(focalLine0);
+      if (!focal0 || vecLength(focal0) <= 0.01) {
+        throw new Error(
+          "expected non-zero focal offset before toggle, got: " + focalLine0,
+        );
+      }
+
+      const unitsLine0 = await waitForDebugLine(page, "units/px:", 5000);
+      const units0 = parseScalarLine(unitsLine0);
+      if (units0 === null) throw new Error("failed to parse " + unitsLine0);
+
+      await page.keyboard.press("Meta+Digit0");
+      await waitForCameraMode(page, "orthographic", 5000);
+      await waitForDebugLine(page, "zoom:", 5000);
+      await waitForDebugLine(page, "ortho.height:", 5000);
+
+      const unitsLine1 = await waitForDebugLine(page, "units/px:", 5000);
+      const units1 = parseScalarLine(unitsLine1);
+      if (units1 === null) throw new Error("failed to parse " + unitsLine1);
+      expect(Math.abs(units1 - units0)).toBeLessThan(units0 * 0.01);
+
+      await page.keyboard.press("Meta+Digit0");
+      await waitForCameraMode(page, "perspective", 5000);
+      await waitForFov(page, 45, 5000);
+
+      const unitsLine2 = await waitForDebugLine(page, "units/px:", 5000);
+      const units2 = parseScalarLine(unitsLine2);
+      if (units2 === null) throw new Error("failed to parse " + unitsLine2);
+      expect(Math.abs(units2 - units0)).toBeLessThan(units0 * 0.01);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
     "keeps cmd-1 reset smooth after orbit + pan",
     async () => {
       if (!page) throw new Error("page not ready");
@@ -248,6 +503,47 @@ describe.skipIf(!isDarwin)("viewport reset jumpiness", () => {
       const jumpLine = await waitForDebugLine(page, "last jump:", 2000);
 
       expect(jumpLine).toBe("last jump: n/a");
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "keeps default views cmd-1/cmd-2 ortho zoom aligned with perspective",
+    async () => {
+      if (!page) throw new Error("page not ready");
+
+      await ensureDebugEnabled(page);
+
+      const viewShortcuts = ["Digit1", "Digit2"] as const;
+
+      for (const viewShortcut of viewShortcuts) {
+        await ensureCameraMode(page, "perspective");
+        await waitForFov(page, 45, 5000);
+        await zoomOut(page);
+
+        await page.keyboard.press("Meta+" + viewShortcut);
+        await waitForRecentCmd1(page, 2000);
+        await waitForControlsSettled(page, 4000);
+
+        const unitsPerspective = await readUnitsPerPixel(page);
+
+        await ensureCameraMode(page, "orthographic");
+        await waitForDebugLine(page, "zoom:", 5000);
+        await zoomOut(page);
+
+        await page.keyboard.press("Meta+" + viewShortcut);
+        await waitForRecentCmd1(page, 2000);
+        await waitForControlsSettled(page, 4000);
+
+        await ensureCameraMode(page, "perspective");
+        await waitForFov(page, 45, 5000);
+        await waitForControlsSettled(page, 4000);
+
+        const unitsOrthographic = await readUnitsPerPixel(page);
+        expect(Math.abs(unitsOrthographic - unitsPerspective)).toBeLessThan(
+          unitsPerspective * 0.01,
+        );
+      }
     },
     TEST_TIMEOUT_MS,
   );

@@ -4,8 +4,9 @@ import { useFrame, useThree } from "@react-three/fiber";
 import type { MutableRefObject, RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Spherical, Vector3 } from "three";
-import { isPerspectiveCamera } from "../camera";
+import { isOrthographicCamera, isPerspectiveCamera } from "../camera";
 import { matchDefaultViewShortcut } from "./default-views";
+import { getOrthographicVisibleHeight } from "./projection-sync";
 import {
   VIEWCUBE_MARGIN_RIGHT_PX,
   VIEWCUBE_MARGIN_TOP_PX,
@@ -227,6 +228,7 @@ export function ViewportDebugOverlay(props: {
     const controls = props.controlsRef.current;
     const activeCamera = controls?.camera ?? fallbackCamera;
     const isPersp = isPerspectiveCamera(activeCamera);
+    const isOrtho = isOrthographicCamera(activeCamera);
     const now = (globalThis.performance?.now?.() ?? Date.now()) as number;
 
     activeCamera.getWorldPosition(scratch.cameraWorldPosition);
@@ -301,8 +303,20 @@ export function ViewportDebugOverlay(props: {
     const lines: string[] = [];
     lines.push("Viewport Debug  (toggle: D)");
     lines.push("");
-    lines.push(`camera: ${isPersp ? "perspective" : "unknown"}`);
+    lines.push(
+      `camera: ${
+        isPersp ? "perspective"
+        : isOrtho ? "orthographic"
+        : "unknown"
+      }`,
+    );
     if (isPersp) lines.push(`fov: ${formatNumber(activeCamera.fov, 2)}°`);
+    if (isOrtho) {
+      lines.push(`zoom: ${formatNumber(activeCamera.zoom, 4)}`);
+      lines.push(
+        `ortho.height: ${formatNumber(getOrthographicVisibleHeight(activeCamera), 4)}`,
+      );
+    }
     lines.push(`cam.pos: ${formatVec3(scratch.cameraWorldPosition, 3)}`);
     lines.push(`cam.up:  ${formatVec3(scratch.up, 3)}`);
     lines.push(`cam.dist: ${formatNumber(distance, 3)}`);

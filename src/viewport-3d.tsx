@@ -1,24 +1,25 @@
-import {
-  CameraControlsImpl,
-  PerspectiveCamera as DreiPerspectiveCamera,
-} from "@react-three/drei";
+import { CameraControlsImpl } from "@react-three/drei";
 import { Canvas, useThree } from "@react-three/fiber";
 import {
   CONTROLS_DRAGGING_SMOOTH_TIME,
   CONTROLS_SMOOTH_TIME,
+  DEFAULT_PERSPECTIVE_FOV_DEG,
   MAX_DISTANCE,
   MIN_DISTANCE,
   PAN_SPEED,
   ROTATE_SPEED,
 } from "./viewport/constants";
+import { ProjectionCameraPair } from "./viewport/projection-camera-pair";
 import { MainScene } from "./viewport/scene-helpers";
 import { StableCameraControls } from "./viewport/stable-camera-controls";
 import { TrackpadControls } from "./viewport/trackpad-controls";
 import { useCameraRig } from "./viewport/use-camera-rig";
 import { useDefaultViewShortcuts } from "./viewport/use-default-view-shortcuts";
 import { useOrbitFallbackPlane } from "./viewport/use-orbit-fallback-plane";
+import { useProjectionToggleShortcut } from "./viewport/use-projection-toggle-shortcut";
 import { ViewCube } from "./viewport/viewcube/view-cube";
 import { ViewportDebugOverlay } from "./viewport/viewport-debug-overlay";
+import { ViewportRenderProvider } from "./viewport/viewport-renderer";
 
 export function Viewport3D(props: { className?: string }) {
   return (
@@ -56,14 +57,38 @@ function ViewportScene() {
     },
   });
 
+  useProjectionToggleShortcut({
+    element: gl.domElement,
+    onToggleProjection: () => {
+      rig.toggleProjection();
+    },
+  });
+
   return (
-    <>
-      <DreiPerspectiveCamera
-        ref={rig.perspectiveCameraRef}
-        up={[0, 0, 1]}
-        near={0.1}
-        far={50000}
-        fov={45}
+    <ViewportRenderProvider>
+      <ProjectionCameraPair
+        ref={rig.cameraPairRef}
+        makeDefault
+        controlsRef={rig.controlsRef}
+        inputBlockRef={rig.inputBlockRef}
+        perspectiveRef={rig.perspectiveCameraRef}
+        orthographicRef={rig.orthographicCameraRef}
+        perspectiveProps={{
+          up: [0, 0, 1],
+          near: 0.1,
+          far: 50000,
+          fov: DEFAULT_PERSPECTIVE_FOV_DEG,
+        }}
+        orthographicProps={{
+          up: [0, 0, 1],
+          near: 0.1,
+          far: 50000,
+          left: -1,
+          right: 1,
+          top: 1,
+          bottom: -1,
+          zoom: 1,
+        }}
       />
 
       <StableCameraControls
@@ -115,7 +140,8 @@ function ViewportScene() {
         onSelectDirection={rig.onSelectDirection}
         onOrbitInput={rig.onOrbitInput}
         onRotateAroundUp={rig.onRotateAroundUp}
+        disableSelection={rig.isProjectionTransitionActive}
       />
-    </>
+    </ViewportRenderProvider>
   );
 }
