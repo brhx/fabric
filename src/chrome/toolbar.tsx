@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { createContext, useContext, useMemo } from "react";
 import { Panel } from "./panel";
 
@@ -50,11 +50,24 @@ export function ToolbarButton(props: {
   label: ReactNode;
   shortcut?: ReactNode;
   children: ReactNode;
+  active?: boolean;
+  buttonProps?: ButtonHTMLAttributes<HTMLButtonElement>;
 }) {
   const toolbarContext = useContext(ToolbarContext);
   const showLabel = Boolean(toolbarContext?.showLabelsOnHover);
   const labelSide = toolbarContext?.labelSide ?? "right";
   const ariaLabel = typeof props.label === "string" ? props.label : undefined;
+  const buttonProps = props.buttonProps;
+  const isActive = Boolean(props.active);
+  const {
+    className: buttonClassName,
+    type: buttonType,
+    ["aria-pressed"]: ariaPressed,
+    ["aria-label"]: ariaLabelOverride,
+    ...restButtonProps
+  } = buttonProps ?? {};
+  const buttonAriaLabel = ariaLabelOverride ?? ariaLabel;
+  const buttonAriaPressed = ariaPressed ?? (isActive ? true : undefined);
 
   const labelPositionClassName =
     labelSide === "right" ? "left-full ml-2" : "right-full mr-2";
@@ -62,11 +75,26 @@ export function ToolbarButton(props: {
   return (
     <div className="relative">
       <button
-        type="button"
-        aria-label={ariaLabel}
-        className="peer grid h-11 w-11 place-items-center p-0.5 hover:[&>span]:bg-white/[0.10] hover:[&>span]:text-white hover:[&>span]:ring-1 hover:[&>span]:ring-white/15"
+        type={buttonType ?? "button"}
+        aria-label={buttonAriaLabel}
+        aria-pressed={buttonAriaPressed}
+        className={[
+          "peer grid h-11 w-11 place-items-center p-0.5",
+          "hover:[&>span]:bg-white/[0.10] hover:[&>span]:text-white hover:[&>span]:ring-1 hover:[&>span]:ring-white/15",
+          buttonClassName,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        {...restButtonProps}
       >
-        <span className="grid h-10 w-10 place-items-center rounded-lg bg-white/[0.025] text-white/80">
+        <span
+          className={[
+            "grid h-10 w-10 place-items-center rounded-lg bg-white/[0.025] text-white/80",
+            isActive ? "bg-white/[0.12] text-white ring-1 ring-white/15" : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           {props.children}
         </span>
       </button>

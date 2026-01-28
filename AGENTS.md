@@ -25,6 +25,8 @@
 - Prefer kebab-case file names (e.g., `viewport-debug-overlay.tsx`), PascalCase React components,
   and `use*` prefixes for hooks.
 - Keep modules focused: math/controls in `src/viewport/`, UI chrome in `src/chrome/`.
+- Avoid `className` constants for Tailwind classes; keep class strings inline in components and
+  use components (e.g., `Toolbar`, `ToolbarButton`) for reuse instead.
 
 ## Testing Guidelines
 
