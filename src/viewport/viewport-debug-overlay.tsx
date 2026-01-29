@@ -5,7 +5,7 @@ import type { MutableRefObject, RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Spherical, Vector3 } from "three";
 import { isOrthographicCamera, isPerspectiveCamera } from "../camera";
-import { matchDefaultViewShortcut } from "./default-views";
+import { matchDefaultViewShortcut, type DefaultViewId } from "./default-views";
 import { getOrthographicVisibleHeight } from "./projection-sync";
 import {
   VIEWCUBE_MARGIN_RIGHT_PX,
@@ -50,6 +50,8 @@ export function ViewportDebugOverlay(props: {
   const [portalReady, setPortalReady] = useState(false);
   const preRef = useRef<HTMLPreElement | null>(null);
   const lastDefaultViewAtRef = useRef<number | null>(null);
+  const lastDefaultViewIdRef = useRef<DefaultViewId | null>(null);
+  const defaultViewSeqRef = useRef(0);
   const lastJumpRef = useRef<{
     label: string;
     at: number;
@@ -208,6 +210,8 @@ export function ViewportDebugOverlay(props: {
       const match = matchDefaultViewShortcut(event);
       if (!match) return;
       lastDefaultViewAtRef.current = view.performance?.now?.() ?? Date.now();
+      lastDefaultViewIdRef.current = match.id;
+      defaultViewSeqRef.current += 1;
       lastJumpRef.current = null;
     };
 
@@ -332,6 +336,8 @@ export function ViewportDebugOverlay(props: {
       `d.ctrl.sph: (dr=${formatNumber(deltaSphRadius, 4)}, dphi=${formatNumber(deltaSphPhi, 4)}, dtheta=${formatNumber(deltaSphTheta, 4)})`,
     );
     lines.push(`jump.thresh.pos: ${formatNumber(posJumpThreshold, 3)}`);
+    lines.push(`default view: ${lastDefaultViewIdRef.current ?? "n/a"}`);
+    lines.push(`default view seq: ${defaultViewSeqRef.current}`);
     if (lastDefaultViewAtRef.current) {
       lines.push(
         `last cmd1: ${formatNumber(now - lastDefaultViewAtRef.current, 0)} ms`,

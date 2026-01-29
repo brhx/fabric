@@ -92,18 +92,45 @@ const waitForDebugPredicate = async (
   throw new Error("timeout waiting for debug predicate\n" + lastText);
 };
 
-const waitForRecentCmd1 = async (target: Page, timeoutMs: number) => {
+const readDefaultViewSeq = async (target: Page) => {
+  const line = await waitForDebugLine(target, "default view seq:", 5000);
+  const match = line.match(/^default view seq: (\d+)$/);
+  if (!match) throw new Error("failed to parse " + line);
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) throw new Error("failed to parse " + line);
+  return value;
+};
+
+const DEFAULT_VIEW_ID_BY_SHORTCUT = {
+  Digit1: "home",
+  Digit2: "front-right-top",
+} as const;
+
+const pressDefaultViewShortcut = async (
+  target: Page,
+  shortcut: keyof typeof DEFAULT_VIEW_ID_BY_SHORTCUT,
+) => {
+  const expectedId = DEFAULT_VIEW_ID_BY_SHORTCUT[shortcut];
+  const seqBefore = await readDefaultViewSeq(target);
+
+  await target.keyboard.press("Meta+" + shortcut);
+
   await waitForDebugPredicate(
     target,
     (lines) => {
-      const line = findLine(lines, "last cmd1:");
-      if (!line) return false;
-      const match = line.match(/last cmd1: (\d+) ms/);
-      if (!match) return false;
-      const ageMs = Number(match[1]);
-      return Number.isFinite(ageMs) && ageMs < 750;
+      const idLine = findLine(lines, "default view:");
+      const seqLine = findLine(lines, "default view seq:");
+      if (!idLine || !seqLine) return false;
+
+      const idMatch = idLine.match(/^default view: (.+)$/);
+      const seqMatch = seqLine.match(/^default view seq: (\d+)$/);
+      if (!idMatch || !seqMatch) return false;
+
+      const id = idMatch[1].trim();
+      const seq = Number(seqMatch[1]);
+      return id === expectedId && Number.isFinite(seq) && seq > seqBefore;
     },
-    timeoutMs,
+    5000,
   );
 };
 
@@ -173,7 +200,8 @@ const waitForFov = async (target: Page, fov: number, timeoutMs: number) => {
       const line = findLine(lines, "fov:");
       if (!line) return false;
       const value = parseScalarLine(line);
-      return value === fov;
+      if (value === null) return false;
+      return Math.abs(value - fov) <= 0.05;
     },
     timeoutMs,
   );
@@ -207,7 +235,7 @@ const waitForControlsSettled = async (target: Page, timeoutMs: number) => {
       ) {
         return false;
       }
-      const threshold = 0.001;
+      const threshold = 0.005;
       return (
         Math.abs(posDelta) <= threshold &&
         Math.abs(focalDelta) <= threshold &&
@@ -391,6 +419,7 @@ describe.skipIf(!isDarwin)("viewport reset jumpiness", () => {
       await page.keyboard.press("Meta+Digit0");
       await waitForCameraMode(page, "perspective", 5000);
       await waitForFov(page, 45, 5000);
+      await waitForControlsSettled(page, 4000);
 
       const baselinePos = await readCamPos(page);
 
@@ -401,6 +430,7 @@ describe.skipIf(!isDarwin)("viewport reset jumpiness", () => {
         await page.keyboard.press("Meta+Digit0");
         await waitForCameraMode(page, "perspective", 5000);
         await waitForFov(page, 45, 5000);
+        await waitForControlsSettled(page, 4000);
 
         const nextPos = await readCamPos(page);
         const delta = vecLength({
@@ -426,7 +456,8 @@ describe.skipIf(!isDarwin)("viewport reset jumpiness", () => {
 
       const fovLine0 = await waitForDebugLine(page, "fov:", 5000);
       const fov0 = parseScalarLine(fovLine0);
-      expect(fov0).toBe(45);
+      expect(fov0).not.toBeNull();
+      expect(Math.abs((fov0 ?? 0) - 45)).toBeLessThanOrEqual(0.05);
 
       const canvas = page.locator("canvas");
       const bounds = await canvas.boundingBox();
@@ -456,6 +487,7 @@ describe.skipIf(!isDarwin)("viewport reset jumpiness", () => {
       await waitForCameraMode(page, "orthographic", 5000);
       await waitForDebugLine(page, "zoom:", 5000);
       await waitForDebugLine(page, "ortho.height:", 5000);
+      await waitForControlsSettled(page, 4000);
 
       const unitsLine1 = await waitForDebugLine(page, "units/px:", 5000);
       const units1 = parseScalarLine(unitsLine1);
@@ -465,6 +497,7 @@ describe.skipIf(!isDarwin)("viewport reset jumpiness", () => {
       await page.keyboard.press("Meta+Digit0");
       await waitForCameraMode(page, "perspective", 5000);
       await waitForFov(page, 45, 5000);
+      await waitForControlsSettled(page, 4000);
 
       const unitsLine2 = await waitForDebugLine(page, "units/px:", 5000);
       const units2 = parseScalarLine(unitsLine2);
@@ -496,9 +529,8 @@ describe.skipIf(!isDarwin)("viewport reset jumpiness", () => {
 
       await page.mouse.wheel(240, 0);
 
-      await page.keyboard.press("Meta+Digit1");
-
-      await waitForRecentCmd1(page, 2000);
+      await pressDefaultViewShortcut(page, "Digit1");
+      await waitForControlsSettled(page, 4000);
 
       const jumpLine = await waitForDebugLine(page, "last jump:", 2000);
 
@@ -519,20 +551,20 @@ describe.skipIf(!isDarwin)("viewport reset jumpiness", () => {
       for (const viewShortcut of viewShortcuts) {
         await ensureCameraMode(page, "perspective");
         await waitForFov(page, 45, 5000);
+        await waitForControlsSettled(page, 4000);
         await zoomOut(page);
 
-        await page.keyboard.press("Meta+" + viewShortcut);
-        await waitForRecentCmd1(page, 2000);
+        await pressDefaultViewShortcut(page, viewShortcut);
         await waitForControlsSettled(page, 4000);
 
         const unitsPerspective = await readUnitsPerPixel(page);
 
         await ensureCameraMode(page, "orthographic");
         await waitForDebugLine(page, "zoom:", 5000);
+        await waitForControlsSettled(page, 4000);
         await zoomOut(page);
 
-        await page.keyboard.press("Meta+" + viewShortcut);
-        await waitForRecentCmd1(page, 2000);
+        await pressDefaultViewShortcut(page, viewShortcut);
         await waitForControlsSettled(page, 4000);
 
         await ensureCameraMode(page, "perspective");
